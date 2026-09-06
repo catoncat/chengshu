@@ -3,7 +3,7 @@ import { convertToEpub, type ConvertRequest } from "@/lib/convert/pipeline.serve
 
 function inlineDisposition(filename: string) {
   const encoded = encodeURIComponent(filename);
-  return `inline; filename="book.epub"; filename*=UTF-8''${encoded}`;
+  return `attachment; filename="book.epub"; filename*=UTF-8''${encoded}`;
 }
 
 export const Route = createFileRoute("/api/epub")({

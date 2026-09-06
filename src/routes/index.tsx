@@ -193,6 +193,7 @@ function Home() {
   }
 
   async function openResult(book: ResultBook | StoredBook) {
+    toast.message("正在保存 EPUB…");
     try {
       const viewUrl = book.sourceUrl.startsWith("http")
         ? epubViewUrl(book.sourceUrl)
@@ -205,7 +206,9 @@ function Home() {
         readerId: settings.readerId,
       });
       if (outcome === "downloaded") {
-        toast.message("已下载 EPUB，到文件里用阅读器打开");
+        toast.message("已保存 EPUB。点屏幕底部下载栏的「打开」，选 KOReader / Librera", {
+          duration: 6000,
+        });
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -312,11 +315,11 @@ function Home() {
               </Button>
               {!isAndroid() ? (
                 <p className="text-center text-xs text-fg-muted">
-                  电脑上会下载文件。请用安卓 Chrome 打开本站，才能跳进 KOReader。
+                  电脑上会下载文件。请用安卓 Chrome 打开本站，点下载栏的「打开」。
                 </p>
               ) : (
                 <p className="text-center text-xs text-fg-muted">
-                  会弹出「打开方式」，选你的阅读器。
+                  会先保存到下载。点底部「打开」，再选你的阅读器。
                 </p>
               )}
               <Button
@@ -459,7 +462,7 @@ function Home() {
               </div>
               <p className="mt-4 text-sm font-medium">转完交给谁</p>
               <p className="mt-1 text-sm text-fg-muted">
-                点按钮会唤起安卓的「打开方式」。选一次 KOReader / Librera 即可。电脑上会改成下载文件。
+                网页不能直接把文件塞进别的 App。点按钮会保存 EPUB，再在下载栏点「打开」选阅读器。
               </p>
               <div className="mt-3 grid gap-2">
                 {READERS.map((reader) => {
@@ -486,8 +489,8 @@ function Home() {
               </div>
               <label className="mt-6 flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3">
                 <span>
-                  <span className="block text-sm font-medium">转完自动打开阅读器</span>
-                  <span className="block text-xs text-fg-muted">仅安卓。关掉就停在结果页，自己点按钮</span>
+                  <span className="block text-sm font-medium">转完自动保存并提示打开</span>
+                  <span className="block text-xs text-fg-muted">关掉就停在结果页，自己点按钮</span>
                 </span>
                 <input
                   type="checkbox"
