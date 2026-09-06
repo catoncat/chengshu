@@ -4,23 +4,19 @@ import type { ReaderId } from "./readers";
 
 type SettingsState = {
   readerId: ReaderId;
-  autoShare: boolean;
-  autoDownload: boolean;
+  autoOpen: boolean;
   setReaderId: (id: ReaderId) => void;
-  setAutoShare: (value: boolean) => void;
-  setAutoDownload: (value: boolean) => void;
+  setAutoOpen: (value: boolean) => void;
 };
 
 export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       readerId: "share",
-      autoShare: true,
-      autoDownload: true,
+      autoOpen: false,
       setReaderId: (readerId) => set({ readerId }),
-      setAutoShare: (autoShare) => set({ autoShare }),
-      setAutoDownload: (autoDownload) => set({ autoDownload }),
+      setAutoOpen: (autoOpen) => set({ autoOpen }),
     }),
-    { name: "chengshu-settings" },
+    { name: "chengshu-settings-v2" },
   ),
 );

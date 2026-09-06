@@ -21,10 +21,10 @@ import {
   formatRelative,
   hostOf,
 } from "@/lib/utils";
-import { READERS, openButtonLabel, type ReaderId } from "@/lib/readers";
+import { READERS, epubViewUrl, isAndroid, openButtonLabel, type ReaderId } from "@/lib/readers";
 import { useSettings } from "@/lib/settings";
 import { deleteBook, listBooks, saveBook, type StoredBook } from "@/lib/history";
-import { downloadBlob, shareEpub } from "@/lib/open-epub";
+import { downloadBlob, openInReader } from "@/lib/open-epub";
 
 type Search = { url?: string; title?: string; text?: string };
 
@@ -165,13 +165,14 @@ function Home() {
       };
       await saveBook(stored);
       setHistory(await listBooks());
-      if (settings.autoDownload) downloadBlob(blob, book.filename);
-      if (settings.autoShare) {
-        try {
-          await shareEpub(blob, book.filename, book.title);
-        } catch {
-          /* user cancelled or no share target */
-        }
+      if (settings.autoOpen && isAndroid() && book.sourceUrl.startsWith("http")) {
+        void openInReader({
+          blob,
+          filename: book.filename,
+          title: book.title,
+          viewUrl: epubViewUrl(book.sourceUrl),
+          readerId: settings.readerId,
+        });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "转换失败";
@@ -193,8 +194,19 @@ function Home() {
 
   async function openResult(book: ResultBook | StoredBook) {
     try {
-      const ok = await shareEpub(book.blob, book.filename, book.title);
-      if (!ok) toast.message("已开始下载，用阅读器打开这个 EPUB");
+      const viewUrl = book.sourceUrl.startsWith("http")
+        ? epubViewUrl(book.sourceUrl)
+        : undefined;
+      const outcome = await openInReader({
+        blob: book.blob,
+        filename: book.filename,
+        title: book.title,
+        viewUrl,
+        readerId: settings.readerId,
+      });
+      if (outcome === "downloaded") {
+        toast.message("已下载 EPUB，到文件里用阅读器打开");
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       downloadBlob(book.blob, book.filename);
@@ -298,6 +310,15 @@ function Home() {
                 <Share2 />
                 {openButtonLabel(settings.readerId)}
               </Button>
+              {!isAndroid() ? (
+                <p className="text-center text-xs text-fg-muted">
+                  电脑上会下载文件。请用安卓 Chrome 打开本站，才能跳进 KOReader。
+                </p>
+              ) : (
+                <p className="text-center text-xs text-fg-muted">
+                  会弹出「打开方式」，选你的阅读器。
+                </p>
+              )}
               <Button
                 className="w-full"
                 variant="secondary"
@@ -438,7 +459,7 @@ function Home() {
               </div>
               <p className="mt-4 text-sm font-medium">转完交给谁</p>
               <p className="mt-1 text-sm text-fg-muted">
-                浏览器不允许静默打开别的 App，所以会弹出系统分享。点一次你的阅读器即可。
+                点按钮会唤起安卓的「打开方式」。选一次 KOReader / Librera 即可。电脑上会改成下载文件。
               </p>
               <div className="mt-3 grid gap-2">
                 {READERS.map((reader) => {
@@ -465,25 +486,13 @@ function Home() {
               </div>
               <label className="mt-6 flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3">
                 <span>
-                  <span className="block text-sm font-medium">转完自动弹出分享</span>
-                  <span className="block text-xs text-fg-muted">从 Chrome 分享进来时最省事</span>
+                  <span className="block text-sm font-medium">转完自动打开阅读器</span>
+                  <span className="block text-xs text-fg-muted">仅安卓。关掉就停在结果页，自己点按钮</span>
                 </span>
                 <input
                   type="checkbox"
-                  checked={settings.autoShare}
-                  onChange={(e) => settings.setAutoShare(e.target.checked)}
-                  className="size-5 accent-primary"
-                />
-              </label>
-              <label className="mt-2 flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3">
-                <span>
-                  <span className="block text-sm font-medium">同时下载到手机</span>
-                  <span className="block text-xs text-fg-muted">文件管理器里也能再打开</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={settings.autoDownload}
-                  onChange={(e) => settings.setAutoDownload(e.target.checked)}
+                  checked={settings.autoOpen}
+                  onChange={(e) => settings.setAutoOpen(e.target.checked)}
                   className="size-5 accent-primary"
                 />
               </label>

@@ -1,3 +1,9 @@
+import {
+  androidViewIntent,
+  isAndroid,
+  type ReaderId,
+} from "./readers";
+
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -9,21 +15,38 @@ export function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-export async function shareEpub(blob: Blob, filename: string, title: string) {
-  const file = new File([blob], filename, { type: "application/epub+zip" });
-  const payload = { files: [file], title, text: title };
-  if (typeof navigator.canShare === "function" && navigator.canShare(payload)) {
-    await navigator.share(payload);
-    return true;
-  }
-  if (typeof navigator.share === "function") {
+export type OpenOutcome = "shared" | "intent" | "downloaded" | "cancelled";
+
+export async function openInReader(opts: {
+  blob: Blob;
+  filename: string;
+  title: string;
+  viewUrl?: string;
+  readerId: ReaderId;
+}): Promise<OpenOutcome> {
+  const file = new File([opts.blob], opts.filename, {
+    type: "application/epub+zip",
+  });
+  const payload = { files: [file], title: opts.title, text: opts.title };
+  const canShareFiles =
+    typeof navigator.canShare === "function" && navigator.canShare(payload);
+
+  if (canShareFiles) {
     try {
       await navigator.share(payload);
-      return true;
+      return "shared";
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return false;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return "cancelled";
+      }
     }
   }
-  downloadBlob(blob, filename);
-  return false;
+
+  if (isAndroid() && opts.viewUrl) {
+    window.location.href = androidViewIntent(opts.viewUrl, opts.readerId);
+    return "intent";
+  }
+
+  downloadBlob(opts.blob, opts.filename);
+  return "downloaded";
 }
