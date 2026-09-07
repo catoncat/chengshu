@@ -16,7 +16,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "Chrome 里的网页，做成书，交给阅读器。",
+        content: "从 Chrome 分享网页，做成书，送到阅读器。",
       },
       { name: "theme-color", content: "#ffffff", media: "(prefers-color-scheme: light)" },
       { name: "theme-color", content: "#000000", media: "(prefers-color-scheme: dark)" },
