@@ -25,9 +25,20 @@ jobs:
         run: |
           mkdir -p public
           cp android/app/build/outputs/apk/debug/app-debug.apk public/chengshu.apk
+          python3 - <<'PY'
+          import json, re
+          t = open("android/app/build.gradle.kts").read()
+          code = int(re.search(r"versionCode = (\d+)", t).group(1))
+          name = re.search(r'versionName = "([^"]+)"', t).group(1)
+          json.dump(
+              {"versionCode": code, "versionName": name, "apk": "https://0nl.onl/chengshu.apk"},
+              open("public/app.json", "w"),
+              ensure_ascii=False,
+          )
+          PY
           git config user.name "chengshu-bot"
           git config user.email "chengshu-bot@users.noreply.github.com"
-          git add public/chengshu.apk
+          git add public/chengshu.apk public/app.json
           git diff --staged --quiet && echo "apk unchanged" && exit 0
           git commit -m "android: 发布 APK"
           git push

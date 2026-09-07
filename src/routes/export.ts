@@ -6,7 +6,7 @@ import {
   type ExportFormat,
 } from "@/lib/convert/pipeline.server";
 
-type Cached = { bytes: Buffer; filename: string; mime: string; at: number };
+type Cached = { bytes: Buffer; filename: string; mime: string; title: string; at: number };
 
 const CACHE = new Map<string, Cached>();
 const TTL_MS = 30 * 60 * 1000;
@@ -62,6 +62,7 @@ export const Route = createFileRoute("/export")({
               bytes: result.bytes,
               filename: result.filename,
               mime: result.mime,
+              title: result.title,
               at: Date.now(),
             };
             put(key, cached);
@@ -72,6 +73,7 @@ export const Route = createFileRoute("/export")({
               "content-disposition": disposition(cached.filename),
               "cache-control": "private, max-age=1800",
               "x-content-type-options": "nosniff",
+              "X-Title": encodeURIComponent(cached.title || cached.filename.replace(/\.[^.]+$/, "")),
             },
           });
         } catch (err) {
