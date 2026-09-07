@@ -5,4 +5,8 @@
     <color name="muted">#FF5F6368</color>
     <color name="line">#FFE6E6E6</color>
     <color name="row">#FFF7F7F7</color>
+    <color name="paper">#FFFFFFFF</color>
+    <color name="cream">#FFF7F7F7</color>
+    <color name="green">#FF1A1A1A</color>
+    <color name="on_green">#FFFFFFFF</color>
 </resources>
