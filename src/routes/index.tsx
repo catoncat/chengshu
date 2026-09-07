@@ -227,7 +227,7 @@ function Home() {
             <p className="font-display text-3xl font-medium tracking-[-0.03em] text-fg">
               成书
             </p>
-            <p className="mt-1 text-sm text-fg-muted">网页进来，电子书出去</p>
+            <p className="mt-1 text-sm text-fg-muted">分享进来，变成下一个 App 能打开的格式</p>
           </div>
           <Button
             variant="ghost"

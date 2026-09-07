@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="paper">#F3EEE4</color>
+    <color name="cream">#FFFBF5</color>
     <color name="ink">#171412</color>
     <color name="muted">#6B645C</color>
     <color name="green">#2F4F3E</color>
+    <color name="line">#E4DDD2</color>
+    <color name="on_green">#F6F1E8</color>
 </resources>

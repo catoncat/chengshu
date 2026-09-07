@@ -32,6 +32,28 @@ export type ConvertResult = {
   size: number;
 };
 
+export const EXPORT_FORMATS = ["epub", "html", "md", "txt"] as const;
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+export type ConvertedFile = {
+  bytes: Buffer;
+  filename: string;
+  mime: string;
+  title: string;
+};
+
+const MIME: Record<ExportFormat, string> = {
+  epub: "application/epub+zip",
+  html: "text/html; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+};
+
+export function parseExportFormat(raw: string | null | undefined): ExportFormat {
+  if (raw === "html" || raw === "md" || raw === "txt" || raw === "epub") return raw;
+  return "epub";
+}
+
 type Extracted = {
   title: string;
   byline: string;
@@ -79,6 +101,56 @@ export async function convertToEpub(input: ConvertRequest): Promise<ConvertResul
     epubBase64,
     html: toShareHtml(extracted),
     size: epub.byteLength,
+  };
+}
+
+export async function convertToFile(
+  input: ConvertRequest,
+  format: ExportFormat,
+): Promise<ConvertedFile> {
+  if (format === "epub") {
+    const result = await convertToEpub(input);
+    return {
+      bytes: Buffer.from(result.epubBase64, "base64"),
+      filename: result.filename,
+      mime: MIME.epub,
+      title: result.title,
+    };
+  }
+
+  const url = input.url?.trim();
+  const text = input.text?.trim();
+  const extracted = url
+    ? await extractFromUrl(url)
+    : extractFromText(text ?? "", input.title);
+  const plain = extracted.content.replace(/<[^>]+>/g, "").trim();
+  if (!plain) throw new Error("没提取到正文，换一篇或把全文贴进来");
+
+  const stem = sanitizeFilename(extracted.title);
+  if (format === "html") {
+    const html = toShareHtml(extracted);
+    return {
+      bytes: Buffer.from(html, "utf8"),
+      filename: `${stem}.html`,
+      mime: MIME.html,
+      title: extracted.title,
+    };
+  }
+  if (format === "md") {
+    const md = toMarkdown(extracted);
+    return {
+      bytes: Buffer.from(md, "utf8"),
+      filename: `${stem}.md`,
+      mime: MIME.md,
+      title: extracted.title,
+    };
+  }
+  const txt = toPlainText(extracted);
+  return {
+    bytes: Buffer.from(txt, "utf8"),
+    filename: `${stem}.txt`,
+    mime: MIME.txt,
+    title: extracted.title,
   };
 }
 
@@ -370,6 +442,88 @@ ${extracted.byline || extracted.siteName ? `<p class="meta">${escapeXml([extract
 ${extracted.content}
 </body>
 </html>`;
+}
+
+function toMarkdown(extracted: Extracted): string {
+  const bits = [
+    `# ${extracted.title}`,
+    extracted.byline || extracted.siteName
+      ? `*${[extracted.byline, extracted.siteName].filter(Boolean).join(" · ")}*`
+      : "",
+    extracted.sourceUrl ? `来源：${extracted.sourceUrl}` : "",
+    htmlToMarkdown(extracted.content),
+  ].filter(Boolean);
+  return `${bits.join("\n\n")}\n`;
+}
+
+function toPlainText(extracted: Extracted): string {
+  const bits = [
+    extracted.title,
+    [extracted.byline, extracted.siteName].filter(Boolean).join(" · "),
+    extracted.sourceUrl ? `来源：${extracted.sourceUrl}` : "",
+    htmlToText(extracted.content),
+  ].filter(Boolean);
+  return `${bits.join("\n\n")}\n`;
+}
+
+function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/h[1-6]>/gi, "\n\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function htmlToMarkdown(html: string): string {
+  const window = parseHTML(`<div id="mdroot">${html}</div>`);
+  const root = window.document.getElementById("mdroot");
+  if (!root) return htmlToText(html);
+  return mdWalk(root).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function mdWalk(node: { nodeType?: number; textContent?: string; tagName?: string; childNodes?: ArrayLike<unknown>; getAttribute?: (name: string) => string | null }): string {
+  if (node.nodeType === 3) return (node.textContent ?? "").replace(/\s+/g, " ");
+  if (node.nodeType !== 1) return "";
+  const tag = (node.tagName ?? "").toLowerCase();
+  const kids = () =>
+    Array.from(node.childNodes ?? [])
+      .map((child) => mdWalk(child as typeof node))
+      .join("");
+  if (tag === "br") return "\n";
+  if (tag === "hr") return "\n\n---\n\n";
+  if (tag === "strong" || tag === "b") return `**${kids().trim()}**`;
+  if (tag === "em" || tag === "i") return `*${kids().trim()}*`;
+  if (tag === "code") return `\`${kids().trim()}\``;
+  if (tag === "pre") return `\n\n\`\`\`\n${(node.textContent ?? "").trim()}\n\`\`\`\n\n`;
+  if (tag === "a") {
+    const href = node.getAttribute?.("href") ?? "";
+    const label = kids().trim() || href;
+    return href ? `[${label}](${href})` : label;
+  }
+  if (tag === "img") {
+    const alt = node.getAttribute?.("alt") ?? "";
+    const src = node.getAttribute?.("src") ?? "";
+    return src ? `![${alt}](${src})` : "";
+  }
+  if (tag === "h1") return `\n\n# ${kids().trim()}\n\n`;
+  if (tag === "h2") return `\n\n## ${kids().trim()}\n\n`;
+  if (tag === "h3") return `\n\n### ${kids().trim()}\n\n`;
+  if (tag === "li") return `\n- ${kids().trim()}`;
+  if (tag === "blockquote") return `\n\n> ${kids().trim().replace(/\n/g, "\n> ")}\n\n`;
+  if (tag === "p" || tag === "div" || tag === "section") return `\n\n${kids().trim()}\n\n`;
+  if (tag === "ul" || tag === "ol") return `\n${kids()}\n`;
+  return kids();
 }
 
 function toXhtml(html: string, images: Map<string, EmbeddedImage>): string {

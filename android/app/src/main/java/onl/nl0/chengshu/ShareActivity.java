@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -33,19 +34,22 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ShareActivity extends Activity {
-  private static final String API = "https://0nl.onl/book.epub?url=";
+  private static final String API = "https://0nl.onl/export";
   private static final String PREFS = "chengshu";
+  private static final String KEY_FORMAT = "format";
   private static final String KEY_READER = "reader_package";
   private static final String ASK_EVERY_TIME = "";
   private static final Pattern URL_RE = Pattern.compile("https?://\\S+");
 
   private ScrollView settings;
   private View converting;
-  private TextView status;
+  private LinearLayout formats;
+  private RadioGroup readers;
   private TextView empty;
   private TextView savedHint;
+  private TextView pipe;
+  private TextView status;
   private ProgressBar progress;
-  private RadioGroup readers;
   private SharedPreferences prefs;
 
   @Override
@@ -53,20 +57,20 @@ public class ShareActivity extends Activity {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_share);
     prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+    migrateLegacy();
     settings = findViewById(R.id.settings);
     converting = findViewById(R.id.converting);
-    status = findViewById(R.id.status);
+    formats = findViewById(R.id.formats);
+    readers = findViewById(R.id.readers);
     empty = findViewById(R.id.empty);
     savedHint = findViewById(R.id.savedHint);
+    pipe = findViewById(R.id.pipe);
+    status = findViewById(R.id.status);
     progress = findViewById(R.id.progress);
-    readers = findViewById(R.id.readers);
 
     String pageUrl = extractUrl(getIntent());
-    if (pageUrl != null) {
-      convertAndOpen(pageUrl);
-    } else {
-      showSettings();
-    }
+    if (pageUrl != null) convertAndOpen(pageUrl);
+    else showSettings();
   }
 
   @Override
@@ -78,47 +82,106 @@ public class ShareActivity extends Activity {
     else showSettings();
   }
 
+  private void migrateLegacy() {
+    if (!prefs.contains("dest.epub") && prefs.contains(KEY_READER)) {
+      prefs.edit().putString("dest.epub", prefs.getString(KEY_READER, ASK_EVERY_TIME)).apply();
+    }
+  }
+
+  private Format currentFormat() {
+    return Format.of(prefs.getString(KEY_FORMAT, Format.EPUB.id));
+  }
+
+  private String destKey(Format format) {
+    return "dest." + format.id;
+  }
+
   private void showSettings() {
     converting.setVisibility(View.GONE);
     settings.setVisibility(View.VISIBLE);
-    fillReaderList();
+    fillFormats();
+    fillDestinations();
   }
 
-  private void fillReaderList() {
-    readers.removeAllViews();
-    String saved = prefs.getString(KEY_READER, ASK_EVERY_TIME);
-    addChoice(ASK_EVERY_TIME, "每次询问", null, saved.equals(ASK_EVERY_TIME));
+  private void fillFormats() {
+    formats.removeAllViews();
+    Format selected = currentFormat();
+    for (Format format : Format.ALL) {
+      formats.addView(formatRow(format, format.id.equals(selected.id)));
+    }
+  }
 
-    List<ReaderApp> apps = installedReaders();
+  private View formatRow(Format format, boolean selected) {
+    LinearLayout row = new LinearLayout(this);
+    row.setOrientation(LinearLayout.VERTICAL);
+    row.setBackgroundResource(selected ? R.drawable.card_selected : R.drawable.card);
+    int pad = dp(14);
+    row.setPadding(pad, pad, pad, pad);
+    LinearLayout.LayoutParams lp =
+        new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    lp.bottomMargin = dp(8);
+    row.setLayoutParams(lp);
+
+    TextView title = new TextView(this);
+    title.setText(format.title);
+    title.setTextSize(16);
+    title.setTextColor(getColor(selected ? R.color.on_green : R.color.ink));
+    TextView hint = new TextView(this);
+    hint.setText(format.hint);
+    hint.setTextSize(13);
+    hint.setPadding(0, dp(2), 0, 0);
+    hint.setTextColor(getColor(selected ? R.color.on_green : R.color.muted));
+    row.addView(title);
+    row.addView(hint);
+    row.setOnClickListener(
+        v -> {
+          prefs.edit().putString(KEY_FORMAT, format.id).apply();
+          fillFormats();
+          fillDestinations();
+        });
+    return row;
+  }
+
+  private void fillDestinations() {
+    readers.setOnCheckedChangeListener(null);
+    readers.removeAllViews();
+    Format format = currentFormat();
+    String saved = prefs.getString(destKey(format), ASK_EVERY_TIME);
+    addChoice(ASK_EVERY_TIME, "每次询问", null, saved.equals(ASK_EVERY_TIME));
+    List<ReaderApp> apps = appsFor(format);
     empty.setVisibility(apps.isEmpty() ? View.VISIBLE : View.GONE);
     boolean matched = saved.equals(ASK_EVERY_TIME);
     for (ReaderApp app : apps) {
-      boolean selected = app.packageName.equals(saved);
-      if (selected) matched = true;
-      addChoice(app.packageName, app.label, app.icon, selected);
+      boolean on = app.packageName.equals(saved);
+      if (on) matched = true;
+      addChoice(app.packageName, app.label, app.icon, on);
     }
-    if (!matched && !saved.isEmpty()) {
-      prefs.edit().putString(KEY_READER, ASK_EVERY_TIME).apply();
-      ((RadioButton) readers.getChildAt(0)).setChecked(true);
+    if (!matched) {
       saved = ASK_EVERY_TIME;
+      prefs.edit().putString(destKey(format), ASK_EVERY_TIME).apply();
+      ((RadioButton) readers.getChildAt(0)).setChecked(true);
     }
     readers.setOnCheckedChangeListener(
         (group, checkedId) -> {
           View button = group.findViewById(checkedId);
           if (button == null) return;
-          String pkg = String.valueOf(button.getTag());
-          prefs.edit().putString(KEY_READER, pkg).apply();
-          updateSavedHint(pkg);
+          prefs.edit().putString(destKey(currentFormat()), String.valueOf(button.getTag())).apply();
+          refreshPipe();
         });
-    updateSavedHint(saved);
+    refreshPipe();
   }
 
-  private void updateSavedHint(String pkg) {
+  private void refreshPipe() {
+    Format format = currentFormat();
+    String pkg = prefs.getString(destKey(format), ASK_EVERY_TIME);
+    String dest = (pkg == null || pkg.isEmpty()) ? "每次询问" : labelFor(pkg);
+    pipe.setText("网页 → " + format.title + " → " + dest);
     if (pkg == null || pkg.isEmpty()) {
-        savedHint.setText("下次分享会问你用哪个。随时打开成书都能改。");
-      return;
+      savedHint.setText("转完会弹出列表。打开成书随时能改格式和去向。");
+    } else {
+      savedHint.setText("已记住这条线。下次分享会直接交给「" + dest + "」。");
     }
-    savedHint.setText("已记住「" + labelFor(pkg) + "」。分享进来会直接打开它。");
   }
 
   private void addChoice(String pkg, String label, Drawable icon, boolean checked) {
@@ -127,39 +190,39 @@ public class ShareActivity extends Activity {
     button.setText(label);
     button.setTextColor(getColor(R.color.ink));
     button.setTextSize(16);
-    button.setPadding(8, 28, 8, 28);
+    button.setPadding(8, dp(12), 8, dp(12));
     button.setGravity(Gravity.CENTER_VERTICAL);
     if (icon != null) {
-      int size = (int) (32 * getResources().getDisplayMetrics().density);
+      int size = dp(28);
       icon.setBounds(0, 0, size, size);
       button.setCompoundDrawables(icon, null, null, null);
-      button.setCompoundDrawablePadding((int) (12 * getResources().getDisplayMetrics().density));
+      button.setCompoundDrawablePadding(dp(12));
     }
     readers.addView(button);
     if (checked) button.setChecked(true);
   }
 
-  private List<ReaderApp> installedReaders() {
+  private List<ReaderApp> appsFor(Format format) {
     PackageManager pm = getPackageManager();
-    Intent probe = new Intent(Intent.ACTION_VIEW);
-    probe.setType("application/epub+zip");
-    probe.addCategory(Intent.CATEGORY_DEFAULT);
-    List<ResolveInfo> infos = pm.queryIntentActivities(probe, PackageManager.MATCH_ALL);
-    Intent probe2 = new Intent(Intent.ACTION_VIEW);
-    probe2.setType("application/epub");
-    probe2.addCategory(Intent.CATEGORY_DEFAULT);
-    infos.addAll(pm.queryIntentActivities(probe2, PackageManager.MATCH_ALL));
-
+    List<ResolveInfo> infos = new ArrayList<>();
+    infos.addAll(queryMime(pm, format.mime));
+    for (String extra : format.extraMimes) infos.addAll(queryMime(pm, extra));
     Map<String, ReaderApp> unique = new LinkedHashMap<>();
     for (ResolveInfo info : infos) {
       if (info.activityInfo == null) continue;
       String pkg = info.activityInfo.packageName;
       if (pkg.equals(getPackageName()) || unique.containsKey(pkg)) continue;
       CharSequence label = info.loadLabel(pm);
-      Drawable icon = info.loadIcon(pm);
-      unique.put(pkg, new ReaderApp(pkg, label == null ? pkg : label.toString(), icon));
+      unique.put(pkg, new ReaderApp(pkg, label == null ? pkg : label.toString(), info.loadIcon(pm)));
     }
     return new ArrayList<>(unique.values());
+  }
+
+  private List<ResolveInfo> queryMime(PackageManager pm, String mime) {
+    Intent probe = new Intent(Intent.ACTION_VIEW);
+    probe.setType(mime);
+    probe.addCategory(Intent.CATEGORY_DEFAULT);
+    return pm.queryIntentActivities(probe, PackageManager.MATCH_ALL);
   }
 
   private String labelFor(String pkg) {
@@ -184,26 +247,24 @@ public class ShareActivity extends Activity {
       return found;
     }
     Uri data = intent.getData();
-    if (data != null) {
-      String s = data.toString();
-      if (s.startsWith("http")) return s;
-    }
+    if (data != null && data.toString().startsWith("http")) return data.toString();
     return null;
   }
 
   private void convertAndOpen(String pageUrl) {
+    Format format = currentFormat();
     settings.setVisibility(View.GONE);
     converting.setVisibility(View.VISIBLE);
     progress.setVisibility(View.VISIBLE);
-    status.setText("正在成书…\n" + pageUrl);
+    status.setText("正在变成 " + format.title + "…\n" + pageUrl);
     new Thread(
             () -> {
               try {
-                File epub = downloadEpub(pageUrl);
+                File file = downloadFile(pageUrl, format);
                 runOnUiThread(
                     () -> {
-                      status.setText("正在打开阅读器");
-                      openReader(epub);
+                      status.setText("正在交给下一个 App");
+                      openWith(file, format);
                     });
               } catch (Exception e) {
                 runOnUiThread(
@@ -217,14 +278,19 @@ public class ShareActivity extends Activity {
         .start();
   }
 
-  private File downloadEpub(String pageUrl) throws Exception {
-    String endpoint = API + URLEncoder.encode(pageUrl, StandardCharsets.UTF_8.name());
+  private File downloadFile(String pageUrl, Format format) throws Exception {
+    String endpoint =
+        API
+            + "?format="
+            + format.id
+            + "&url="
+            + URLEncoder.encode(pageUrl, StandardCharsets.UTF_8.name());
     HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
     conn.setConnectTimeout(15000);
     conn.setReadTimeout(60000);
     conn.setInstanceFollowRedirects(true);
-    conn.setRequestProperty("User-Agent", "Chengshu/1.1");
-    conn.setRequestProperty("Accept", "application/epub+zip");
+    conn.setRequestProperty("User-Agent", "Chengshu/1.2");
+    conn.setRequestProperty("Accept", format.mime + ",*/*");
     int code = conn.getResponseCode();
     InputStream in = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
     ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -236,22 +302,23 @@ public class ShareActivity extends Activity {
       String err = new String(body, StandardCharsets.UTF_8);
       throw new RuntimeException(err.isEmpty() ? ("HTTP " + code) : err);
     }
-    if (body.length < 100 || body[0] != 'P' || body[1] != 'K') {
+    if (body.length < 8) throw new RuntimeException("服务器没返回文件");
+    if (format.id.equals("epub") && (body[0] != 'P' || body[1] != 'K')) {
       throw new RuntimeException("服务器没返回 EPUB");
     }
-    File file = new File(getCacheDir(), "book.epub");
+    File file = new File(getCacheDir(), "chengshu" + format.ext);
     try (FileOutputStream fos = new FileOutputStream(file)) {
       fos.write(body);
     }
     return file;
   }
 
-  private void openReader(File epub) {
-    Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", epub);
-    grantAll(uri);
-    String pkg = prefs.getString(KEY_READER, ASK_EVERY_TIME);
+  private void openWith(File file, Format format) {
+    Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
+    grantAll(uri, format.mime);
+    String pkg = prefs.getString(destKey(format), ASK_EVERY_TIME);
     if (pkg != null && !pkg.isEmpty() && isInstalled(pkg)) {
-      Intent view = viewIntent(uri);
+      Intent view = viewIntent(uri, format.mime);
       view.setPackage(pkg);
       grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
       try {
@@ -259,21 +326,21 @@ public class ShareActivity extends Activity {
         finish();
         return;
       } catch (ActivityNotFoundException ignored) {
-        prefs.edit().putString(KEY_READER, ASK_EVERY_TIME).apply();
+        prefs.edit().putString(destKey(format), ASK_EVERY_TIME).apply();
       }
     }
     try {
-      startActivity(Intent.createChooser(viewIntent(uri), "用哪个阅读器打开"));
+      startActivity(Intent.createChooser(viewIntent(uri, format.mime), "交给哪个 App"));
       finish();
     } catch (ActivityNotFoundException e) {
       progress.setVisibility(View.GONE);
-      status.setText("没找到阅读器。打开成书 App，在设置里看已安装的阅读器。");
+      status.setText("没找到能打开 " + format.title + " 的 App。打开成书换一个格式。");
     }
   }
 
-  private void grantAll(Uri uri) {
-    Intent view = viewIntent(uri);
-    List<ResolveInfo> matches = getPackageManager().queryIntentActivities(view, PackageManager.MATCH_ALL);
+  private void grantAll(Uri uri, String mime) {
+    List<ResolveInfo> matches =
+        getPackageManager().queryIntentActivities(viewIntent(uri, mime), PackageManager.MATCH_ALL);
     for (ResolveInfo info : matches) {
       if (info.activityInfo == null) continue;
       grantUriPermission(
@@ -281,9 +348,9 @@ public class ShareActivity extends Activity {
     }
   }
 
-  private Intent viewIntent(Uri uri) {
+  private Intent viewIntent(Uri uri, String mime) {
     Intent view = new Intent(Intent.ACTION_VIEW);
-    view.setDataAndType(uri, "application/epub+zip");
+    view.setDataAndType(uri, mime);
     view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
     view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
     return view;
@@ -296,6 +363,10 @@ public class ShareActivity extends Activity {
     } catch (PackageManager.NameNotFoundException e) {
       return false;
     }
+  }
+
+  private int dp(int value) {
+    return Math.round(value * getResources().getDisplayMetrics().density);
   }
 
   private static final class ReaderApp {
