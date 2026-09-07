@@ -1,22 +1,21 @@
 package onl.nl0.chengshu;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
-import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
-import android.view.Gravity;
+import android.provider.Settings;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
-import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.core.content.FileProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -24,12 +23,11 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,39 +36,47 @@ public class ShareActivity extends Activity {
   private static final String PREFS = "chengshu";
   private static final String KEY_FORMAT = "format";
   private static final String KEY_READER = "reader_package";
-  private static final String ASK_EVERY_TIME = "";
+  private static final String ASK = "";
   private static final Pattern URL_RE = Pattern.compile("https?://\\S+");
 
-  private ScrollView settings;
+  private View home;
   private View converting;
-  private LinearLayout formats;
-  private RadioGroup readers;
+  private LinearLayout history;
   private TextView empty;
-  private TextView savedHint;
-  private TextView pipe;
+  private TextView formatValue;
+  private TextView destValue;
+  private TextView hiddenValue;
+  private TextView updateValue;
   private TextView status;
   private ProgressBar progress;
   private SharedPreferences prefs;
+  private Library library;
+  private Update.Info pendingUpdate;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_share);
     prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+    library = new Library(this);
     migrateLegacy();
-    settings = findViewById(R.id.settings);
+    home = findViewById(R.id.home);
     converting = findViewById(R.id.converting);
-    formats = findViewById(R.id.formats);
-    readers = findViewById(R.id.readers);
+    history = findViewById(R.id.history);
     empty = findViewById(R.id.empty);
-    savedHint = findViewById(R.id.savedHint);
-    pipe = findViewById(R.id.pipe);
+    formatValue = findViewById(R.id.formatValue);
+    destValue = findViewById(R.id.destValue);
+    hiddenValue = findViewById(R.id.hiddenValue);
+    updateValue = findViewById(R.id.updateValue);
     status = findViewById(R.id.status);
     progress = findViewById(R.id.progress);
-
+    findViewById(R.id.rowFormat).setOnClickListener(v -> pickFormat());
+    findViewById(R.id.rowDest).setOnClickListener(v -> pickDest());
+    findViewById(R.id.rowHidden).setOnClickListener(v -> pickHidden());
+    findViewById(R.id.rowUpdate).setOnClickListener(v -> onUpdateTap());
     String pageUrl = extractUrl(getIntent());
-    if (pageUrl != null) convertAndOpen(pageUrl);
-    else showSettings();
+    if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(getIntent()), currentFormat(), true);
+    else showHome();
   }
 
   @Override
@@ -78,13 +84,13 @@ public class ShareActivity extends Activity {
     super.onNewIntent(intent);
     setIntent(intent);
     String pageUrl = extractUrl(intent);
-    if (pageUrl != null) convertAndOpen(pageUrl);
-    else showSettings();
+    if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(intent), currentFormat(), true);
+    else showHome();
   }
 
   private void migrateLegacy() {
     if (!prefs.contains("dest.epub") && prefs.contains(KEY_READER)) {
-      prefs.edit().putString("dest.epub", prefs.getString(KEY_READER, ASK_EVERY_TIME)).apply();
+      prefs.edit().putString("dest.epub", prefs.getString(KEY_READER, ASK)).apply();
     }
   }
 
@@ -96,200 +102,199 @@ public class ShareActivity extends Activity {
     return "dest." + format.id;
   }
 
-  private void showSettings() {
+  private void showHome() {
     converting.setVisibility(View.GONE);
-    settings.setVisibility(View.VISIBLE);
-    fillFormats();
-    fillDestinations();
+    home.setVisibility(View.VISIBLE);
+    refreshPrefs();
+    refreshHistory();
+    checkUpdate(false);
   }
 
-  private void fillFormats() {
-    formats.removeAllViews();
-    Format selected = currentFormat();
-    for (Format format : Format.ALL) {
-      formats.addView(formatRow(format, format.id.equals(selected.id)));
-    }
+  private void refreshPrefs() {
+    Format format = currentFormat();
+    formatValue.setText(format.title);
+    String pkg = prefs.getString(destKey(format), ASK);
+    destValue.setText(pkg == null || pkg.isEmpty() ? "每次询问" : labelOf(pkg));
+    int hidden = Apps.userHidden(prefs).size();
+    hiddenValue.setText(hidden == 0 ? "无" : hidden + " 个");
   }
 
-  private View formatRow(Format format, boolean selected) {
+  private void refreshHistory() {
+    history.removeAllViews();
+    List<Library.Item> items = library.list();
+    empty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+    for (Library.Item item : items) history.addView(historyRow(item));
+  }
+
+  private View historyRow(Library.Item item) {
     LinearLayout row = new LinearLayout(this);
     row.setOrientation(LinearLayout.VERTICAL);
-    row.setBackgroundResource(selected ? R.drawable.card_selected : R.drawable.card);
-    int pad = dp(14);
-    row.setPadding(pad, pad, pad, pad);
-    LinearLayout.LayoutParams lp =
-        new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-    lp.bottomMargin = dp(8);
-    row.setLayoutParams(lp);
-
+    row.setPadding(dp(20), dp(14), dp(20), dp(14));
+    row.setBackgroundResource(android.R.drawable.list_selector_background);
+    row.setClickable(true);
     TextView title = new TextView(this);
-    title.setText(format.title);
+    title.setText(item.title);
+    title.setTextColor(getColor(R.color.ink));
     title.setTextSize(16);
-    title.setTextColor(getColor(selected ? R.color.on_green : R.color.ink));
-    TextView hint = new TextView(this);
-    hint.setText(format.hint);
-    hint.setTextSize(13);
-    hint.setPadding(0, dp(2), 0, 0);
-    hint.setTextColor(getColor(selected ? R.color.on_green : R.color.muted));
+    title.setMaxLines(2);
+    TextView meta = new TextView(this);
+    meta.setText(item.host + " · " + Format.of(item.lastFormat).title + " · " + relative(item.updated));
+    meta.setTextColor(getColor(R.color.muted));
+    meta.setTextSize(13);
+    meta.setPadding(0, dp(4), 0, 0);
     row.addView(title);
-    row.addView(hint);
-    row.setOnClickListener(
-        v -> {
-          prefs.edit().putString(KEY_FORMAT, format.id).apply();
-          fillFormats();
-          fillDestinations();
-        });
-    return row;
+    row.addView(meta);
+    row.setOnClickListener(v -> openItem(item, Format.of(item.lastFormat)));
+    row.setOnLongClickListener(v -> { itemMenu(item); return true; });
+    View line = new View(this);
+    line.setBackgroundColor(getColor(R.color.line));
+    LinearLayout wrap = new LinearLayout(this);
+    wrap.setOrientation(LinearLayout.VERTICAL);
+    wrap.addView(row);
+    wrap.addView(line, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+    return wrap;
   }
 
-  private void fillDestinations() {
-    readers.setOnCheckedChangeListener(null);
-    readers.removeAllViews();
+  private void itemMenu(Library.Item item) {
+    String[] actions = new String[Format.ALL.length + 2];
+    actions[0] = "打开";
+    for (int i = 0; i < Format.ALL.length; i++) {
+      Format format = Format.ALL[i];
+      actions[i + 1] = (library.has(item, format) ? "打开 " : "转成 ") + format.title;
+    }
+    actions[actions.length - 1] = "删除";
+    new AlertDialog.Builder(this).setTitle(item.title).setItems(actions, (d, which) -> {
+      if (which == 0) openItem(item, Format.of(item.lastFormat));
+      else if (which == actions.length - 1) { library.delete(item); refreshHistory(); }
+      else openItem(item, Format.ALL[which - 1]);
+    }).show();
+  }
+
+  private void pickFormat() {
+    Format current = currentFormat();
+    String[] labels = new String[Format.ALL.length];
+    int selected = 0;
+    for (int i = 0; i < Format.ALL.length; i++) {
+      labels[i] = Format.ALL[i].title;
+      if (Format.ALL[i].id.equals(current.id)) selected = i;
+    }
+    new AlertDialog.Builder(this).setTitle("格式").setSingleChoiceItems(labels, selected, (d, which) -> {
+      prefs.edit().putString(KEY_FORMAT, Format.ALL[which].id).apply();
+      d.dismiss();
+      refreshPrefs();
+    }).show();
+  }
+
+  private void pickDest() {
     Format format = currentFormat();
-    String saved = prefs.getString(destKey(format), ASK_EVERY_TIME);
-    addChoice(ASK_EVERY_TIME, "每次询问", null, saved.equals(ASK_EVERY_TIME));
-    List<ReaderApp> apps = appsFor(format);
-    empty.setVisibility(apps.isEmpty() ? View.VISIBLE : View.GONE);
-    boolean matched = saved.equals(ASK_EVERY_TIME);
-    for (ReaderApp app : apps) {
-      boolean on = app.packageName.equals(saved);
-      if (on) matched = true;
-      addChoice(app.packageName, app.label, app.icon, on);
+    List<Apps.Entry> apps = Apps.visible(this, format, prefs);
+    List<String> labels = new ArrayList<>();
+    List<String> pkgs = new ArrayList<>();
+    labels.add("每次询问");
+    pkgs.add(ASK);
+    int selected = 0;
+    String saved = prefs.getString(destKey(format), ASK);
+    for (int i = 0; i < apps.size(); i++) {
+      labels.add(apps.get(i).label);
+      pkgs.add(apps.get(i).packageName);
+      if (apps.get(i).packageName.equals(saved)) selected = i + 1;
     }
-    if (!matched) {
-      saved = ASK_EVERY_TIME;
-      prefs.edit().putString(destKey(format), ASK_EVERY_TIME).apply();
-      ((RadioButton) readers.getChildAt(0)).setChecked(true);
-    }
-    readers.setOnCheckedChangeListener(
-        (group, checkedId) -> {
-          View button = group.findViewById(checkedId);
-          if (button == null) return;
-          prefs.edit().putString(destKey(currentFormat()), String.valueOf(button.getTag())).apply();
-          refreshPipe();
-        });
-    refreshPipe();
+    new AlertDialog.Builder(this).setTitle("打开方式").setSingleChoiceItems(labels.toArray(new String[0]), selected, (d, which) -> {
+      prefs.edit().putString(destKey(format), pkgs.get(which)).apply();
+      d.dismiss();
+      refreshPrefs();
+    }).setNeutralButton("排除…", (d, w) -> pickExclude(format)).show();
   }
 
-  private void refreshPipe() {
-    Format format = currentFormat();
-    String pkg = prefs.getString(destKey(format), ASK_EVERY_TIME);
-    String dest = (pkg == null || pkg.isEmpty()) ? "每次询问" : labelFor(pkg);
-    pipe.setText("网页 → " + format.title + " → " + dest);
-    if (pkg == null || pkg.isEmpty()) {
-      savedHint.setText("转完会弹出列表。打开成书随时能改格式和去向。");
-    } else {
-      savedHint.setText("已记住这条线。下次分享会直接交给「" + dest + "」。");
+  private void pickExclude(Format format) {
+    List<Apps.Entry> apps = Apps.visible(this, format, prefs);
+    if (apps.isEmpty()) { Toast.makeText(this, "没有可排除的应用", Toast.LENGTH_SHORT).show(); return; }
+    String[] labels = new String[apps.size()];
+    for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).label;
+    new AlertDialog.Builder(this).setTitle("点一项即排除").setItems(labels, (d, which) -> {
+      Apps.hide(prefs, apps.get(which).packageName);
+      String saved = prefs.getString(destKey(format), ASK);
+      if (apps.get(which).packageName.equals(saved)) prefs.edit().putString(destKey(format), ASK).apply();
+      refreshPrefs();
+    }).show();
+  }
+
+  private void pickHidden() {
+    List<String> pkgs = new ArrayList<>(Apps.userHidden(prefs));
+    if (pkgs.isEmpty()) { Toast.makeText(this, "没有排除的应用。打开方式里可以排除。", Toast.LENGTH_SHORT).show(); return; }
+    String[] labels = new String[pkgs.size()];
+    for (int i = 0; i < pkgs.size(); i++) labels[i] = labelOf(pkgs.get(i));
+    new AlertDialog.Builder(this).setTitle("点一项即恢复").setItems(labels, (d, which) -> {
+      Apps.unhide(prefs, pkgs.get(which));
+      refreshPrefs();
+    }).show();
+  }
+
+  private void convertAndOpen(String pageUrl, String title, Format format, boolean finishAfter) {
+    Library.Item existing = library.findByUrl(pageUrl);
+    if (existing != null && library.has(existing, format)) {
+      openFile(library.file(existing, format), format, finishAfter);
+      return;
     }
-  }
-
-  private void addChoice(String pkg, String label, Drawable icon, boolean checked) {
-    RadioButton button = new RadioButton(this);
-    button.setTag(pkg);
-    button.setText(label);
-    button.setTextColor(getColor(R.color.ink));
-    button.setTextSize(16);
-    button.setPadding(8, dp(12), 8, dp(12));
-    button.setGravity(Gravity.CENTER_VERTICAL);
-    if (icon != null) {
-      int size = dp(28);
-      icon.setBounds(0, 0, size, size);
-      button.setCompoundDrawables(icon, null, null, null);
-      button.setCompoundDrawablePadding(dp(12));
-    }
-    readers.addView(button);
-    if (checked) button.setChecked(true);
-  }
-
-  private List<ReaderApp> appsFor(Format format) {
-    PackageManager pm = getPackageManager();
-    List<ResolveInfo> infos = new ArrayList<>();
-    infos.addAll(queryMime(pm, format.mime));
-    for (String extra : format.extraMimes) infos.addAll(queryMime(pm, extra));
-    Map<String, ReaderApp> unique = new LinkedHashMap<>();
-    for (ResolveInfo info : infos) {
-      if (info.activityInfo == null) continue;
-      String pkg = info.activityInfo.packageName;
-      if (pkg.equals(getPackageName()) || unique.containsKey(pkg)) continue;
-      CharSequence label = info.loadLabel(pm);
-      unique.put(pkg, new ReaderApp(pkg, label == null ? pkg : label.toString(), info.loadIcon(pm)));
-    }
-    return new ArrayList<>(unique.values());
-  }
-
-  private List<ResolveInfo> queryMime(PackageManager pm, String mime) {
-    Intent probe = new Intent(Intent.ACTION_VIEW);
-    probe.setType(mime);
-    probe.addCategory(Intent.CATEGORY_DEFAULT);
-    return pm.queryIntentActivities(probe, PackageManager.MATCH_ALL);
-  }
-
-  private String labelFor(String pkg) {
-    try {
-      PackageManager pm = getPackageManager();
-      return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
-    } catch (Exception e) {
-      return pkg;
-    }
-  }
-
-  private static String extractUrl(Intent intent) {
-    if (intent == null) return null;
-    String text = intent.getStringExtra(Intent.EXTRA_TEXT);
-    if (text == null) text = "";
-    Matcher m = URL_RE.matcher(text);
-    if (m.find()) {
-      String found = m.group();
-      while (found.endsWith(")") || found.endsWith("。") || found.endsWith(".")) {
-        found = found.substring(0, found.length() - 1);
-      }
-      return found;
-    }
-    Uri data = intent.getData();
-    if (data != null && data.toString().startsWith("http")) return data.toString();
-    return null;
-  }
-
-  private void convertAndOpen(String pageUrl) {
-    Format format = currentFormat();
-    settings.setVisibility(View.GONE);
+    home.setVisibility(View.GONE);
     converting.setVisibility(View.VISIBLE);
     progress.setVisibility(View.VISIBLE);
-    status.setText("正在变成 " + format.title + "…\n" + pageUrl);
-    new Thread(
-            () -> {
-              try {
-                File file = downloadFile(pageUrl, format);
-                runOnUiThread(
-                    () -> {
-                      status.setText("正在交给下一个 App");
-                      openWith(file, format);
-                    });
-              } catch (Exception e) {
-                runOnUiThread(
-                    () -> {
-                      progress.setVisibility(View.GONE);
-                      status.setText("失败：" + e.getMessage());
-                    });
-              }
-            },
-            "chengshu-convert")
-        .start();
+    status.setText(existing == null ? "成书中" : "转成 " + format.title);
+    new Thread(() -> {
+      try {
+        Downloaded downloaded = download(pageUrl, format);
+        String savedTitle = downloaded.title != null && !downloaded.title.isEmpty() ? downloaded.title : (title == null || title.isEmpty() ? Library.hostOf(pageUrl) : title);
+        Library.Item item = library.save(pageUrl, savedTitle, format, downloaded.body);
+        runOnUiThread(() -> openFile(library.file(item, format), format, finishAfter));
+      } catch (Exception e) {
+        runOnUiThread(() -> { progress.setVisibility(View.GONE); status.setText(e.getMessage()); });
+      }
+    }, "chengshu-convert").start();
   }
 
-  private File downloadFile(String pageUrl, Format format) throws Exception {
-    String endpoint =
-        API
-            + "?format="
-            + format.id
-            + "&url="
-            + URLEncoder.encode(pageUrl, StandardCharsets.UTF_8.name());
+  private void openItem(Library.Item item, Format format) {
+    if (library.has(item, format)) {
+      library.markOpened(item, format);
+      openFile(library.file(item, format), format, false);
+      return;
+    }
+    convertAndOpen(item.url, item.title, format, false);
+  }
+
+  private void openFile(File file, Format format, boolean finishAfter) {
+    Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
+    grantAll(uri, format.mime);
+    String pkg = prefs.getString(destKey(format), ASK);
+    if (pkg != null && !pkg.isEmpty() && isInstalled(pkg)) {
+      Intent view = viewIntent(uri, format.mime);
+      view.setPackage(pkg);
+      grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+      try {
+        startActivity(view);
+        if (finishAfter) finish(); else showHome();
+        return;
+      } catch (ActivityNotFoundException ignored) {
+        prefs.edit().putString(destKey(format), ASK).apply();
+      }
+    }
+    try {
+      startActivity(Intent.createChooser(viewIntent(uri, format.mime), "打开"));
+      if (finishAfter) finish(); else showHome();
+    } catch (ActivityNotFoundException e) {
+      converting.setVisibility(View.VISIBLE);
+      home.setVisibility(View.GONE);
+      progress.setVisibility(View.GONE);
+      status.setText("没有能打开 " + format.title + " 的应用");
+    }
+  }
+
+  private Downloaded download(String pageUrl, Format format) throws Exception {
+    String endpoint = API + "?format=" + format.id + "&url=" + URLEncoder.encode(pageUrl, StandardCharsets.UTF_8.name());
     HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
     conn.setConnectTimeout(15000);
     conn.setReadTimeout(60000);
     conn.setInstanceFollowRedirects(true);
-    conn.setRequestProperty("User-Agent", "Chengshu/1.2");
+    conn.setRequestProperty("User-Agent", "Chengshu/" + BuildConfig.VERSION_NAME);
     conn.setRequestProperty("Accept", format.mime + ",*/*");
     int code = conn.getResponseCode();
     InputStream in = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
@@ -302,49 +307,19 @@ public class ShareActivity extends Activity {
       String err = new String(body, StandardCharsets.UTF_8);
       throw new RuntimeException(err.isEmpty() ? ("HTTP " + code) : err);
     }
-    if (body.length < 8) throw new RuntimeException("服务器没返回文件");
-    if (format.id.equals("epub") && (body[0] != 'P' || body[1] != 'K')) {
-      throw new RuntimeException("服务器没返回 EPUB");
-    }
-    File file = new File(getCacheDir(), "chengshu" + format.ext);
-    try (FileOutputStream fos = new FileOutputStream(file)) {
-      fos.write(body);
-    }
-    return file;
-  }
-
-  private void openWith(File file, Format format) {
-    Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
-    grantAll(uri, format.mime);
-    String pkg = prefs.getString(destKey(format), ASK_EVERY_TIME);
-    if (pkg != null && !pkg.isEmpty() && isInstalled(pkg)) {
-      Intent view = viewIntent(uri, format.mime);
-      view.setPackage(pkg);
-      grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-      try {
-        startActivity(view);
-        finish();
-        return;
-      } catch (ActivityNotFoundException ignored) {
-        prefs.edit().putString(destKey(format), ASK_EVERY_TIME).apply();
-      }
-    }
-    try {
-      startActivity(Intent.createChooser(viewIntent(uri, format.mime), "交给哪个 App"));
-      finish();
-    } catch (ActivityNotFoundException e) {
-      progress.setVisibility(View.GONE);
-      status.setText("没找到能打开 " + format.title + " 的 App。打开成书换一个格式。");
-    }
+    if (body.length < 8) throw new RuntimeException("没返回文件");
+    if (format.id.equals("epub") && (body[0] != 'P' || body[1] != 'K')) throw new RuntimeException("没返回 EPUB");
+    String header = conn.getHeaderField("X-Title");
+    String title = "";
+    if (header != null && !header.isEmpty()) title = URLDecoder.decode(header, StandardCharsets.UTF_8.name());
+    return new Downloaded(body, title);
   }
 
   private void grantAll(Uri uri, String mime) {
-    List<ResolveInfo> matches =
-        getPackageManager().queryIntentActivities(viewIntent(uri, mime), PackageManager.MATCH_ALL);
+    List<ResolveInfo> matches = getPackageManager().queryIntentActivities(viewIntent(uri, mime), PackageManager.MATCH_ALL);
     for (ResolveInfo info : matches) {
       if (info.activityInfo == null) continue;
-      grantUriPermission(
-          info.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+      grantUriPermission(info.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
     }
   }
 
@@ -357,27 +332,115 @@ public class ShareActivity extends Activity {
   }
 
   private boolean isInstalled(String pkg) {
+    try { getPackageManager().getPackageInfo(pkg, 0); return true; }
+    catch (PackageManager.NameNotFoundException e) { return false; }
+  }
+
+  private String labelOf(String pkg) {
     try {
-      getPackageManager().getPackageInfo(pkg, 0);
-      return true;
-    } catch (PackageManager.NameNotFoundException e) {
-      return false;
+      PackageManager pm = getPackageManager();
+      return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+    } catch (Exception e) { return pkg; }
+  }
+
+  private static String extractUrl(Intent intent) {
+    if (intent == null) return null;
+    String text = intent.getStringExtra(Intent.EXTRA_TEXT);
+    if (text == null) text = "";
+    Matcher m = URL_RE.matcher(text);
+    if (m.find()) {
+      String found = m.group();
+      while (found.endsWith(")") || found.endsWith("。") || found.endsWith(".")) found = found.substring(0, found.length() - 1);
+      return found;
     }
+    Uri data = intent.getData();
+    if (data != null && data.toString().startsWith("http")) return data.toString();
+    return null;
+  }
+
+  private static String extractTitle(Intent intent) {
+    if (intent == null) return "";
+    String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+    if (subject != null && !subject.trim().isEmpty()) return subject.trim();
+    String text = intent.getStringExtra(Intent.EXTRA_TEXT);
+    if (text == null) return "";
+    String[] lines = text.split("\n");
+    if (lines.length > 1 && !lines[0].startsWith("http")) return lines[0].trim();
+    return "";
+  }
+
+  private void checkUpdate(boolean toastIfCurrent) {
+    updateValue.setText("…");
+    new Thread(() -> {
+      try {
+        Update.Info info = Update.fetch();
+        runOnUiThread(() -> {
+          pendingUpdate = info;
+          if (info.newerThan(BuildConfig.VERSION_CODE)) updateValue.setText("有 " + info.versionName);
+          else {
+            updateValue.setText("已是最新");
+            if (toastIfCurrent) Toast.makeText(this, "已是最新", Toast.LENGTH_SHORT).show();
+          }
+        });
+      } catch (Exception e) {
+        runOnUiThread(() -> updateValue.setText(toastIfCurrent ? "失败" : BuildConfig.VERSION_NAME));
+      }
+    }, "chengshu-update").start();
+  }
+
+  private void onUpdateTap() {
+    if (pendingUpdate != null && pendingUpdate.newerThan(BuildConfig.VERSION_CODE)) {
+      installUpdate(pendingUpdate);
+      return;
+    }
+    checkUpdate(true);
+  }
+
+  private void installUpdate(Update.Info info) {
+    if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+      startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
+      Toast.makeText(this, "允许安装后，再点一次检查更新", Toast.LENGTH_LONG).show();
+      return;
+    }
+    updateValue.setText("下载中");
+    new Thread(() -> {
+      try {
+        HttpURLConnection conn = (HttpURLConnection) new URL(info.apk).openConnection();
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(60000);
+        InputStream in = conn.getInputStream();
+        File apk = new File(getCacheDir(), "update.apk");
+        try (FileOutputStream fos = new FileOutputStream(apk)) {
+          byte[] buf = new byte[16384];
+          int n;
+          while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
+        }
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", apk);
+        Intent view = new Intent(Intent.ACTION_VIEW);
+        view.setDataAndType(uri, "application/vnd.android.package-archive");
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        runOnUiThread(() -> { updateValue.setText("安装"); startActivity(view); });
+      } catch (Exception e) {
+        runOnUiThread(() -> updateValue.setText("下载失败"));
+      }
+    }, "chengshu-apk").start();
   }
 
   private int dp(int value) {
     return Math.round(value * getResources().getDisplayMetrics().density);
   }
 
-  private static final class ReaderApp {
-    final String packageName;
-    final String label;
-    final Drawable icon;
+  private static String relative(long t) {
+    long d = System.currentTimeMillis() - t;
+    if (d < 60_000) return "刚刚";
+    if (d < 3_600_000) return (d / 60_000) + " 分钟前";
+    if (d < 86_400_000) return (d / 3_600_000) + " 小时前";
+    return (d / 86_400_000) + " 天前";
+  }
 
-    ReaderApp(String packageName, String label, Drawable icon) {
-      this.packageName = packageName;
-      this.label = label;
-      this.icon = icon;
-    }
+  private static final class Downloaded {
+    final byte[] body;
+    final String title;
+    Downloaded(byte[] body, String title) { this.body = body; this.title = title; }
   }
 }
