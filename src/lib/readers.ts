@@ -74,7 +74,7 @@ export function isAndroid(): boolean {
 }
 
 export function epubViewUrl(sourceUrl: string): string {
-  const url = new URL("/api/epub", window.location.origin);
+  const url = new URL("/book.epub", window.location.origin);
   url.searchParams.set("url", sourceUrl);
   return url.href;
 }

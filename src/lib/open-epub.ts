@@ -11,12 +11,7 @@ export function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-export type OpenOutcome = "shared" | "downloaded" | "cancelled";
-
-function asEpubFile(blob: Blob, filename: string) {
-  const name = filename.endsWith(".epub") ? filename : `${filename}.epub`;
-  return new File([blob], name, { type: "application/epub+zip" });
-}
+export type OpenOutcome = "shared" | "opened" | "downloaded" | "cancelled";
 
 export async function openInReader(opts: {
   blob: Blob;
@@ -25,29 +20,29 @@ export async function openInReader(opts: {
   viewUrl?: string;
   readerId?: string;
 }): Promise<OpenOutcome> {
-  const file = asEpubFile(opts.blob, opts.filename);
-
-  // Chrome's Web Share allowlist does not include EPUB, so canShare({files})
-  // is almost always false. Still try — future browsers / other engines may.
-  try {
-    const filesOnly = { files: [file] };
-    if (typeof navigator.share === "function") {
+  // URL share always summons the Android sheet. File share cannot: Chrome
+  // blocks EPUB from Web Share, and <a download> just piles up Downloads.
+  if (opts.viewUrl && typeof navigator.share === "function") {
+    try {
+      const data = { title: opts.title, url: opts.viewUrl, text: opts.title };
       const allowed =
-        typeof navigator.canShare !== "function" || navigator.canShare(filesOnly);
+        typeof navigator.canShare !== "function" || navigator.canShare({ url: opts.viewUrl });
       if (allowed) {
-        await navigator.share(filesOnly);
+        await navigator.share(data);
         return "shared";
       }
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      return "cancelled";
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return "cancelled";
+      }
     }
   }
 
-  // Android Chrome opens local EPUB via the download bar's "打开".
-  // VIEW intents against https://…epub never match KOReader (it listens for
-  // content/file, not https), which is why the old button appeared dead.
-  downloadBlob(opts.blob, file.name);
+  if (opts.viewUrl) {
+    window.open(opts.viewUrl, "_blank", "noopener");
+    return "opened";
+  }
+
+  downloadBlob(opts.blob, opts.filename);
   return "downloaded";
 }

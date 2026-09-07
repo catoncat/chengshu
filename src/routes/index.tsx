@@ -165,14 +165,14 @@ function Home() {
       };
       await saveBook(stored);
       setHistory(await listBooks());
-      if (settings.autoOpen && isAndroid() && book.sourceUrl.startsWith("http")) {
+      if (settings.autoOpen && book.sourceUrl.startsWith("http")) {
         void openInReader({
           blob,
           filename: book.filename,
           title: book.title,
           viewUrl: epubViewUrl(book.sourceUrl),
           readerId: settings.readerId,
-        });
+        }).catch(() => undefined);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "转换失败";
@@ -193,7 +193,6 @@ function Home() {
   }
 
   async function openResult(book: ResultBook | StoredBook) {
-    toast.message("正在保存 EPUB…");
     try {
       const viewUrl = book.sourceUrl.startsWith("http")
         ? epubViewUrl(book.sourceUrl)
@@ -206,14 +205,11 @@ function Home() {
         readerId: settings.readerId,
       });
       if (outcome === "downloaded") {
-        toast.message("已保存 EPUB。点屏幕底部下载栏的「打开」，选 KOReader / Librera", {
-          duration: 6000,
-        });
+        toast.message("已下载 EPUB");
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      downloadBlob(book.blob, book.filename);
-      toast.message("已下载，在文件里用阅读器打开");
+      toast.error(err instanceof Error ? err.message : "打不开阅读器");
     }
   }
 
@@ -315,11 +311,11 @@ function Home() {
               </Button>
               {!isAndroid() ? (
                 <p className="text-center text-xs text-fg-muted">
-                  电脑上会下载文件。请用安卓 Chrome 打开本站，点下载栏的「打开」。
+                  电脑上请点「下载 EPUB」。手机上会弹出系统列表，选 Librera / KOReader。
                 </p>
               ) : (
                 <p className="text-center text-xs text-fg-muted">
-                  会先保存到下载。点底部「打开」，再选你的阅读器。
+                  弹出系统列表后选 Librera 或 KOReader，不要选「下载」。
                 </p>
               )}
               <Button
@@ -462,7 +458,7 @@ function Home() {
               </div>
               <p className="mt-4 text-sm font-medium">转完交给谁</p>
               <p className="mt-1 text-sm text-fg-muted">
-                网页不能直接把文件塞进别的 App。点按钮会保存 EPUB，再在下载栏点「打开」选阅读器。
+                点「用阅读器打开」会弹出系统分享。在列表里选 Librera / KOReader，不要选下载。
               </p>
               <div className="mt-3 grid gap-2">
                 {READERS.map((reader) => {
@@ -489,7 +485,7 @@ function Home() {
               </div>
               <label className="mt-6 flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3">
                 <span>
-                  <span className="block text-sm font-medium">转完自动保存并提示打开</span>
+                  <span className="block text-sm font-medium">转完自动弹出阅读器列表</span>
                   <span className="block text-xs text-fg-muted">关掉就停在结果页，自己点按钮</span>
                 </span>
                 <input

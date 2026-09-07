@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BookDotepubRouteImport } from './routes/book[.]epub'
 import { Route as ApiConvertRouteImport } from './routes/api/convert'
 import { Route as ApiEpubRouteImport } from './routes/api/epub'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BookDotepubRoute = BookDotepubRouteImport.update({
+  id: '/book.epub',
+  path: '/book.epub',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiConvertRoute = ApiConvertRouteImport.update({
@@ -31,30 +37,34 @@ const ApiEpubRoute = ApiEpubRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/book.epub': typeof BookDotepubRoute
   '/api/convert': typeof ApiConvertRoute
   '/api/epub': typeof ApiEpubRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/book.epub': typeof BookDotepubRoute
   '/api/convert': typeof ApiConvertRoute
   '/api/epub': typeof ApiEpubRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/book.epub': typeof BookDotepubRoute
   '/api/convert': typeof ApiConvertRoute
   '/api/epub': typeof ApiEpubRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/convert' | '/api/epub'
+  fullPaths: '/' | '/book.epub' | '/api/convert' | '/api/epub'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/convert' | '/api/epub'
-  id: '__root__' | '/' | '/api/convert' | '/api/epub'
+  to: '/' | '/book.epub' | '/api/convert' | '/api/epub'
+  id: '__root__' | '/' | '/book.epub' | '/api/convert' | '/api/epub'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BookDotepubRoute: typeof BookDotepubRoute
   ApiConvertRoute: typeof ApiConvertRoute
   ApiEpubRoute: typeof ApiEpubRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/book.epub': {
+      id: '/book.epub'
+      path: '/book.epub'
+      fullPath: '/book.epub'
+      preLoaderRoute: typeof BookDotepubRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/convert': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BookDotepubRoute: BookDotepubRoute,
   ApiConvertRoute: ApiConvertRoute,
   ApiEpubRoute: ApiEpubRoute,
 }
