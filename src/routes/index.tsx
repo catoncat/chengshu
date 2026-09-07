@@ -1,509 +1,132 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  BookOpen,
-  Check,
-  Download,
-  Link2,
-  Loader2,
-  Settings2,
-  Share2,
-  Smartphone,
-  Trash2,
-  X,
-} from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  extractSharedUrl,
-  formatBytes,
-  formatRelative,
-  hostOf,
-} from "@/lib/utils";
-import { READERS, isAndroid, openButtonLabel, type ReaderId } from "@/lib/readers";
-import { useSettings } from "@/lib/settings";
-import { deleteBook, listBooks, saveBook, type StoredBook } from "@/lib/history";
-import { downloadBlob, openInReader } from "@/lib/open-epub";
-
-type Search = { url?: string; title?: string; text?: string };
-
-type ConvertOk = {
-  title: string;
-  byline: string;
-  siteName: string;
-  excerpt: string;
-  sourceUrl: string;
-  filename: string;
-  imageCount: number;
-  charCount: number;
-  epubBase64: string;
-  html: string;
-  size: number;
-};
-
-type ResultBook = {
-  title: string;
-  byline: string;
-  siteName: string;
-  excerpt: string;
-  sourceUrl: string;
-  filename: string;
-  imageCount: number;
-  charCount: number;
-  size: number;
-  blob: Blob;
-  html: string;
-};
-
-const STEPS = ["抓取网页", "抽出正文", "收进配图", "装订 EPUB"];
-const DEMO_URL = "https://zh.wikipedia.org/wiki/EPUB";
 
 export const Route = createFileRoute("/")({
-  validateSearch: (search: Record<string, unknown>): Search => ({
-    url: typeof search.url === "string" ? search.url : undefined,
-    title: typeof search.title === "string" ? search.title : undefined,
-    text: typeof search.text === "string" ? search.text : undefined,
-  }),
   component: Home,
 });
 
 function Home() {
-  const search = Route.useSearch();
-  const settings = useSettings();
-  const [draft, setDraft] = useState("");
-  const [status, setStatus] = useState<"idle" | "working" | "done" | "error">("idle");
-  const [step, setStep] = useState(0);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<ResultBook | null>(null);
-  const [history, setHistory] = useState<StoredBook[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [standalone, setStandalone] = useState(false);
-  const [installEvent, setInstallEvent] = useState<{ prompt: () => Promise<unknown> } | null>(
-    null,
-  );
-  const startedKey = useRef<string | null>(null);
-
-  useEffect(() => {
-    const media = window.matchMedia("(display-mode: standalone)");
-    const nav = window.navigator as Navigator & { standalone?: boolean };
-    setStandalone(media.matches || nav.standalone === true);
-    const onPrompt = (event: Event) => {
-      event.preventDefault();
-      setInstallEvent(event as unknown as { prompt: () => Promise<unknown> });
-    };
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
-  }, []);
-
-  useEffect(() => {
-    void listBooks().then(setHistory).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    const url = extractSharedUrl(search);
-    const text = !url && search.text ? search.text : "";
-    const key = url || text;
-    if (!key || startedKey.current === key) return;
-    startedKey.current = key;
-    if (url) setDraft(url);
-    void runConvert({
-      url: url ?? undefined,
-      text: text || undefined,
-      title: search.title,
-    });
-  }, [search]);
-
-  useEffect(() => {
-    if (status !== "working") return;
-    setStep(0);
-    const timer = window.setInterval(() => {
-      setStep((n) => (n < STEPS.length - 1 ? n + 1 : n));
-    }, 1400);
-    return () => window.clearInterval(timer);
-  }, [status]);
-
-  const incoming = useMemo(() => extractSharedUrl(search), [search]);
-
-  async function runConvert(payload: { url?: string; text?: string; title?: string }) {
-    setStatus("working");
-    setError("");
-    setResult(null);
-    try {
-      const res = await fetch("/api/convert", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = (await res.json()) as ConvertOk & { error?: string };
-      if (!res.ok) throw new Error(data.error || "转换失败");
-      const bytes = Uint8Array.from(atob(data.epubBase64), (c) => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: "application/epub+zip" });
-      const book: ResultBook = {
-        title: data.title,
-        byline: data.byline,
-        siteName: data.siteName,
-        excerpt: data.excerpt,
-        sourceUrl: data.sourceUrl,
-        filename: data.filename,
-        imageCount: data.imageCount,
-        charCount: data.charCount,
-        size: data.size,
-        blob,
-        html: data.html,
-      };
-      setResult(book);
-      setStatus("done");
-      const stored: StoredBook = {
-        id: crypto.randomUUID(),
-        title: book.title,
-        sourceUrl: book.sourceUrl,
-        filename: book.filename,
-        createdAt: Date.now(),
-        size: book.size,
-        byline: book.byline,
-        siteName: book.siteName,
-        excerpt: book.excerpt,
-        blob,
-        html: book.html,
-      };
-      await saveBook(stored);
-      setHistory(await listBooks());
-      if (settings.autoOpen) {
-        void openInReader({
-          blob,
-          filename: book.filename,
-          title: book.title,
-          html: book.html,
-        }).catch(() => undefined);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "转换失败";
-      setError(message);
-      setStatus("error");
-      toast.error(message);
-    }
-  }
-
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    const url = extractSharedUrl({ url: draft, text: draft });
-    if (!url) {
-      toast.error("请粘贴一个网页链接");
-      return;
-    }
-    void runConvert({ url });
-  }
-
-  async function openResult(book: ResultBook | StoredBook) {
-    try {
-      const outcome = await openInReader({
-        blob: book.blob,
-        filename: book.filename,
-        title: book.title,
-        html: book.html,
-      });
-      if (outcome === "downloaded") {
-        toast.message("已保存 EPUB。点底部下载栏的「打开」，选 Librera");
-      } else if (outcome === "already") {
-        toast.message("这本书已经在下载列表里，点那一条的「打开」");
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      toast.error(err instanceof Error ? err.message : "打不开阅读器");
-    }
-  }
-
-  async function removeHistory(id: string) {
-    await deleteBook(id);
-    setHistory(await listBooks());
-  }
-
   return (
-    <main className="paper-grain min-h-dvh">
-      <div className="mx-auto flex w-full max-w-lg flex-col px-5 pb-16 pt-[max(1.25rem,env(safe-area-inset-top))]">
-        <header className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-display text-3xl font-medium tracking-[-0.03em] text-fg">
-              成书
-            </p>
-            <p className="mt-1 text-sm text-fg-muted">分享进来，变成下一个 App 能打开的格式</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="设置"
-            onClick={() => setSettingsOpen(true)}
+    <>
+      <header className="mx-auto flex h-16 max-w-[744px] items-center justify-between gap-5 px-5 min-[641px]:justify-start min-[641px]:gap-10 min-[641px]:px-8">
+        <a
+          href="/"
+          className="text-foreground no-underline hover:text-foreground"
+          aria-label="成书"
+        >
+          成书
+        </a>
+        <nav className="flex items-center gap-[clamp(10px,3vw,24px)] text-[13px] text-muted-foreground min-[641px]:gap-7 min-[641px]:text-sm">
+          <a
+            href="#install"
+            className="text-inherit no-underline hover:text-foreground"
           >
-            <Settings2 />
-          </Button>
-        </header>
+            安装
+          </a>
+          <a
+            href="https://github.com/catoncat/chengshu"
+            className="text-inherit no-underline hover:text-foreground"
+          >
+            源码
+          </a>
+          <a
+            href="https://0nl.onl/chengshu.apk"
+            className="text-inherit no-underline hover:text-foreground"
+          >
+            APK
+          </a>
+        </nav>
+      </header>
 
-        {!standalone ? (
-          <div className="mt-6 rounded-xl border border-border bg-surface p-4">
-            <div className="flex items-start gap-3">
-              <Smartphone className="mt-0.5 size-5 shrink-0 text-primary" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium">加到主屏幕后，才会出现在 Chrome 分享列表</p>
-                <p className="mt-1 text-sm text-fg-muted">
-                  用 Chrome 打开本页 → 菜单 → 添加到主屏幕。以后任意网页点分享，选「成书」即可。
-                </p>
-                {installEvent ? (
-                  <Button
-                    className="mt-3"
-                    size="sm"
-                    onClick={() => void installEvent.prompt()}
-                  >
-                    安装成书
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        ) : incoming ? (
-          <p className="mt-6 text-sm text-fg-muted">已从分享接收链接，正在成书。</p>
-        ) : null}
+      <main className="mx-auto max-w-[744px] px-5 pt-10 pb-16 text-muted-foreground sm:px-8 sm:pt-14 sm:pb-24">
+        <article>
+          <p className="text-foreground">网页变成下一个 App 能打开的格式。</p>
 
-        {status === "working" ? (
-          <section className="mt-8 rounded-xl border border-border bg-surface p-6">
-            <p className="font-display text-2xl font-medium tracking-[-0.03em]">正在成书</p>
-            <p className="mt-2 truncate text-sm text-fg-muted">{draft || incoming || "提取正文"}</p>
-            <ol className="mt-6 space-y-3">
-              {STEPS.map((label, i) => {
-                const active = i === step;
-                const done = i < step;
-                return (
-                  <li key={label} className="flex items-center gap-3 text-sm">
-                    <span className="grid size-6 place-items-center rounded-full bg-surface-2 text-fg">
-                      {done ? (
-                        <Check className="size-3.5" />
-                      ) : active ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <span className="size-1.5 rounded-full bg-fg-subtle" />
-                      )}
-                    </span>
-                    <span className={active ? "text-fg" : "text-fg-muted"}>{label}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-        ) : null}
+          <p id="install" className="mt-[1em] text-[clamp(10px,3.2vw,14px)] text-foreground sm:text-sm">
+            <a
+              href="https://0nl.onl/chengshu.apk"
+              className="font-semibold text-foreground no-underline hover:text-foreground"
+            >
+              $ curl -fsSL https://0nl.onl/chengshu.apk -o chengshu.apk
+            </a>
+          </p>
+          <p className="mt-3.5 text-[13px]">
+            v1.3 · Android 8+ · 约 1.9mb ·{" "}
+            <a href="https://github.com/catoncat/chengshu">源码</a>
+          </p>
 
-        {status === "done" && result ? (
-          <section className="mt-8 rounded-xl border border-border bg-surface p-5">
-            <p className="text-xs font-medium tracking-wide text-fg-subtle">已装订</p>
-            <h2 className="font-display mt-2 text-2xl font-medium leading-snug tracking-[-0.03em]">
-              {result.title}
-            </h2>
-            <p className="mt-2 text-sm text-fg-muted">
-              {[result.byline, result.siteName || hostOf(result.sourceUrl), formatBytes(result.size)]
-                .filter(Boolean)
-                .join(" · ")}
+          <div className="mt-12 max-w-[600px] leading-[1.75] [&_p+p]:mt-[1.5em]">
+            <p>
+              成书是一个分享目标。在 Chrome 打开任意网页，点分享，选成书。它抽出正文，做成
+              EPUB、Markdown、HTML 或纯文本，再交给你指定的阅读器。
             </p>
-            {result.excerpt ? (
-              <p className="mt-3 line-clamp-3 text-sm text-fg-muted">{result.excerpt}</p>
-            ) : null}
-            <div className="mt-5 flex flex-col gap-2">
-              <Button className="w-full" size="lg" onClick={() => void openResult(result)}>
-                <Share2 />
-                {openButtonLabel(settings.readerId)}
-              </Button>
-              {!isAndroid() ? (
-                <p className="text-center text-xs text-fg-muted">
-                  电脑上请用「下载 EPUB」。手机 Chrome 会弹出应用列表，选 Librera。
-                </p>
-              ) : (
-                <p className="text-center text-xs text-fg-muted">
-                  弹出列表后选 Librera / KOReader。送进去的是书，不是网页链接。
-                </p>
-              )}
-              <Button
-                className="w-full"
-                variant="secondary"
-                onClick={() => downloadBlob(result.blob, result.filename)}
-              >
-                <Download />
-                下载 EPUB
-              </Button>
-              <Button
-                className="w-full"
-                variant="ghost"
-                onClick={() => {
-                  setStatus("idle");
-                  setResult(null);
-                  setDraft("");
-                }}
-              >
-                再转一篇
-              </Button>
-            </div>
-          </section>
-        ) : null}
-
-        {status === "error" ? (
-          <section className="mt-8 rounded-xl border border-border bg-surface p-5">
-            <p className="text-sm font-medium text-danger">{error}</p>
-            <p className="mt-2 text-sm text-fg-muted">
-              有的站点会拦服务器抓取。可以换一篇，或把正文复制后粘贴到输入框。
+            <p>
+              这一页本身就是一篇完整的文章。装好成书之后，把{" "}
+              <a href="https://0nl.onl/">https://0nl.onl/</a>{" "}
+              分享进去，就能验证整条链路：抓取、抽取、装订、打开。
             </p>
-            <Button className="mt-4" variant="secondary" onClick={() => setStatus("idle")}>
-              返回
-            </Button>
-          </section>
-        ) : null}
-
-        {status === "idle" ? (
-          <>
-            <form className="mt-8" onSubmit={onSubmit}>
-              <label htmlFor="url" className="text-sm font-medium text-fg">
-                网页链接
-              </label>
-              <div className="mt-2 flex flex-col gap-2">
-                <Input
-                  id="url"
-                  inputMode="url"
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  placeholder="https://"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                />
-                <Button type="submit" className="w-full" size="lg">
-                  <BookOpen />
-                  做成 EPUB
-                </Button>
-              </div>
-              <button
-                type="button"
-                className="mt-3 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
-                onClick={() => {
-                  setDraft(DEMO_URL);
-                  void runConvert({ url: DEMO_URL });
-                }}
-              >
-                先用维基百科的 EPUB 条目试一次
-              </button>
-            </form>
-
-            <ol className="mt-10 space-y-4">
-              {[
-                { icon: Smartphone, title: "装到主屏幕", body: "让成书出现在 Chrome 分享菜单。" },
-                { icon: Share2, title: "在 Chrome 里分享", body: "打开网页 → 分享 → 成书。不用再跳去别的浏览器。" },
-                { icon: BookOpen, title: "交给阅读器", body: `转完点「${openButtonLabel(settings.readerId)}」。` },
-              ].map((item) => (
-                <li key={item.title} className="flex gap-3">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-md bg-surface text-primary">
-                    <item.icon className="size-4" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium">{item.title}</p>
-                    <p className="mt-0.5 text-sm text-fg-muted">{item.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </>
-        ) : null}
-
-        {history.length > 0 && status !== "working" ? (
-          <section className="mt-12">
-            <h2 className="text-sm font-medium text-fg-muted">最近成书</h2>
-            <ul className="mt-3 space-y-2">
-              {history.map((book) => (
-                <li
-                  key={book.id}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-3"
-                >
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    onClick={() => void openResult(book)}
-                  >
-                    <p className="truncate text-sm font-medium">{book.title}</p>
-                    <p className="mt-0.5 truncate text-xs text-fg-subtle">
-                      {hostOf(book.sourceUrl) || "摘录"} · {formatBytes(book.size)} ·{" "}
-                      {formatRelative(book.createdAt)}
-                    </p>
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="删除"
-                    onClick={() => void removeHistory(book.id)}
-                  >
-                    <Trash2 className="size-4 text-fg-muted" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-      </div>
-
-      {settingsOpen ? (
-        <div className="fixed inset-0 z-50 bg-scrim">
-          <div className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-y-auto rounded-t-xl bg-bg px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4">
-            <div className="mx-auto w-full max-w-lg">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-xl font-medium">设置</h2>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="关闭"
-                  onClick={() => setSettingsOpen(false)}
-                >
-                  <X />
-                </Button>
-              </div>
-              <p className="mt-4 text-sm font-medium">转完交给谁</p>
-              <p className="mt-1 text-sm text-fg-muted">
-                阅读器只能打开文件，打不开网页链接。点按钮会把书送到系统列表里。
-              </p>
-              <div className="mt-3 grid gap-2">
-                {READERS.map((reader) => {
-                  const selected = settings.readerId === reader.id;
-                  return (
-                    <button
-                      key={reader.id}
-                      type="button"
-                      onClick={() => settings.setReaderId(reader.id as ReaderId)}
-                      className={`flex items-start justify-between rounded-lg border px-4 py-3 text-left ${
-                        selected
-                          ? "border-primary bg-surface"
-                          : "border-border bg-surface"
-                      }`}
-                    >
-                      <span>
-                        <span className="block text-sm font-medium">{reader.label}</span>
-                        <span className="mt-0.5 block text-xs text-fg-muted">{reader.hint}</span>
-                      </span>
-                      {selected ? <Check className="size-4 text-primary" /> : null}
-                    </button>
-                  );
-                })}
-              </div>
-              <label className="mt-6 flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3">
-                <span>
-                  <span className="block text-sm font-medium">转完自动弹出应用列表</span>
-                  <span className="block text-xs text-fg-muted">需要刚点过按钮。关掉就停在结果页</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={settings.autoOpen}
-                  onChange={(e) => settings.setAutoOpen(e.target.checked)}
-                  className="size-5 accent-primary"
-                />
-              </label>
-              <p className="mt-6 flex items-start gap-2 text-xs text-fg-subtle">
-                <Link2 className="mt-0.5 size-3.5 shrink-0" />
-                抓取在服务器完成。只为生成 EPUB，不建账号，记录只存在这台手机。
-              </p>
-            </div>
           </div>
-        </div>
-      ) : null}
-    </main>
+
+          <section className="mt-10 max-w-[560px] leading-[1.75]">
+            <h2 className="mb-1 text-sm font-bold text-foreground">怎么用</h2>
+            <p>
+              先安装 APK。打开成书，选格式和打开方式，例如 EPUB 交给 KOReader。之后在
+              Chrome 里分享网页到成书即可。格式和去向会记住，随时能改。
+            </p>
+          </section>
+
+          <section className="mt-10 max-w-[560px] leading-[1.75]">
+            <h2 className="mb-1 text-sm font-bold text-foreground">同一篇不会再抓</h2>
+            <p>
+              转过的网页记在本地。链接会去掉跟踪参数再判断是否同一篇。已经有的格式直接打开；没有的格式再转一次。长按最近一项可以改成别的格式，或删除。
+            </p>
+          </section>
+
+          <section className="mt-10 max-w-[560px] leading-[1.75]">
+            <h2 className="mb-1 text-sm font-bold text-foreground">打开方式</h2>
+            <p>
+              KOReader、Librera、开源阅读、EinkBro、Obsidian、Markor
+              会排在前面。蓝牙、NFC、文件管理器默认藏掉。列表里不对的，打开方式里点排除；排除的应用可以再恢复。
+            </p>
+          </section>
+
+          <section className="mt-10 max-w-[560px] leading-[1.75]">
+            <h2 className="mb-1 text-sm font-bold text-foreground">为什么不是网页应用</h2>
+            <p>
+              浏览器不能把 EPUB
+              文件直接交给阅读器。Android 要的是文件的内容地址，不是一个下载链接。成书是原生分享接收器，转完用
+              FileProvider 打开。这一步在网页里做不到。
+            </p>
+          </section>
+
+          <section className="mt-10 max-w-[560px] leading-[1.75]">
+            <h2 className="mb-1 text-sm font-bold text-foreground">抽取</h2>
+            <p>
+              正文用 Mozilla Readability，也就是 Firefox
+              阅读模式那一套。配图会收进 EPUB。页面太薄或几乎没有文章结构时，再走一次兜底。装订是
+              EPUB 3，够阅读器翻页，不是出版工具。
+            </p>
+          </section>
+
+          <section className="mt-10 max-w-[560px] leading-[1.75]">
+            <h2 className="mb-1 text-sm font-bold text-foreground">更新</h2>
+            <p>
+              打开成书，点检查更新。有新版本会显示版本号，再点一次下载安装。第一次需要允许安装未知应用。
+            </p>
+          </section>
+
+          <p className="mt-16 text-[13px]">
+            <a href="https://github.com/catoncat/chengshu" className="text-inherit no-underline hover:text-foreground">
+              源码
+            </a>
+            {" · "}
+            <a href="https://0nl.onl/chengshu.apk" className="text-inherit no-underline hover:text-foreground">
+              安装
+            </a>
+            {" · "}
+            0nl.onl
+          </p>
+        </article>
+      </main>
+    </>
   );
 }
