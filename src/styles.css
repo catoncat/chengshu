@@ -1,34 +1,61 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #f3eee4;
-  --color-surface: #fffaf3;
-  --color-surface-2: #ebe4d6;
-  --color-fg: #1a1714;
-  --color-fg-muted: #6f675c;
-  --color-fg-subtle: #8a8276;
-  --color-primary: #2f4a3c;
-  --color-primary-foreground: #f3eee4;
-  --color-border: color-mix(in oklab, #1a1714 12%, transparent);
-  --color-ring: #2f4a3c;
-  --color-accent: #2f4a3c;
-  --color-danger: #8a3a2a;
-  --color-scrim: color-mix(in oklab, #1a1714 40%, transparent);
-
-  --font-sans: "Figtree", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Fraunces", "Songti SC", Georgia, serif;
-
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
-
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --motion-quick: 150ms;
-  --motion-fast: 250ms;
+  --color-background: #ffffff;
+  --color-foreground: #171717;
+  --color-muted: #f2f2f2;
+  --color-muted-foreground: #525252;
+  --color-border: #e5e5e5;
+  --color-popover: #fafafa;
+  --color-popover-foreground: #171717;
+  --color-ring: #a3a3a3;
+  --color-bg: #ffffff;
+  --color-fg: #171717;
+  --color-fg-muted: #525252;
+  --color-surface: #fafafa;
+  --color-primary: #171717;
+  --color-primary-foreground: #ffffff;
+  --color-accent: #171717;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 0.125rem;
 }
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --color-background: #ffffff;
+    --color-foreground: #171717;
+    --color-muted: #f2f2f2;
+    --color-muted-foreground: #525252;
+    --color-border: #e5e5e5;
+    --color-popover: #fafafa;
+    --color-popover-foreground: #171717;
+    --color-ring: #a3a3a3;
+    --color-bg: #ffffff;
+    --color-fg: #171717;
+    --logo-divider: #cccccc;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --color-background: #000000;
+      --color-foreground: #ededed;
+      --color-muted: #161616;
+      --color-muted-foreground: #a1a1a1;
+      --color-border: #262626;
+      --color-popover: #0a0a0a;
+      --color-popover-foreground: #ededed;
+      --color-ring: #666666;
+      --color-bg: #000000;
+      --color-fg: #ededed;
+      --color-primary: #ededed;
+      --color-primary-foreground: #000000;
+      --logo-divider: #666666;
+    }
+  }
+
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
@@ -41,10 +68,22 @@
   }
 
   body {
-    background: var(--color-bg);
-    color: var(--color-fg);
-    font-family: var(--font-sans);
-    line-height: 1.5;
+    background: var(--color-background);
+    color: var(--color-muted-foreground);
+    font-family: var(--font-mono);
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: var(--color-foreground);
+    text-decoration: underline;
+    text-decoration-color: var(--color-border);
+    text-underline-offset: 4px;
+  }
+
+  a:hover {
+    text-decoration-color: var(--color-foreground);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -55,11 +94,4 @@
       transition-duration: 0.01ms !important;
     }
   }
-}
-
-.paper-grain {
-  background-color: var(--color-bg);
-  background-image:
-    radial-gradient(circle at 12% 8%, color-mix(in oklab, var(--color-fg) 4%, transparent), transparent 42%),
-    radial-gradient(circle at 88% 0%, color-mix(in oklab, var(--color-primary) 7%, transparent), transparent 36%);
 }
