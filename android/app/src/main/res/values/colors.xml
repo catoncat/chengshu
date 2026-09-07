@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="paper">#F3EEE4</color>
-    <color name="cream">#FFFBF5</color>
-    <color name="ink">#171412</color>
-    <color name="muted">#6B645C</color>
-    <color name="green">#2F4F3E</color>
-    <color name="line">#E4DDD2</color>
-    <color name="on_green">#F6F1E8</color>
+    <color name="bg">#FFFFFFFF</color>
+    <color name="ink">#FF1A1A1A</color>
+    <color name="muted">#FF5F6368</color>
+    <color name="line">#FFE6E6E6</color>
+    <color name="row">#FFF7F7F7</color>
 </resources>
