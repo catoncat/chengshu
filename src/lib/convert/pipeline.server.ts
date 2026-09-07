@@ -28,6 +28,7 @@ export type ConvertResult = {
   imageCount: number;
   charCount: number;
   epubBase64: string;
+  html: string;
   size: number;
 };
 
@@ -76,6 +77,7 @@ export async function convertToEpub(input: ConvertRequest): Promise<ConvertResul
     imageCount: images.files.length,
     charCount: extracted.content.replace(/<[^>]+>/g, "").length,
     epubBase64,
+    html: toShareHtml(extracted),
     size: epub.byteLength,
   };
 }
@@ -346,6 +348,29 @@ const ALLOWED = new Set([
 ]);
 
 const VOID = new Set(["br", "hr", "img"]);
+
+function toShareHtml(extracted: Extracted): string {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${escapeXml(extracted.title)}</title>
+<style>
+body{font:18px/1.7 system-ui,sans-serif;max-width:40rem;margin:1.5rem auto;padding:0 1.25rem;color:#171412;background:#f6f1e8}
+h1{font-size:1.6rem;line-height:1.3;margin:0 0 .75rem}
+.meta{color:#6b645c;font-size:.9rem;margin-bottom:1.25rem}
+img{max-width:100%;height:auto}
+a{color:#8a3b12}
+</style>
+</head>
+<body>
+<h1>${escapeXml(extracted.title)}</h1>
+${extracted.byline || extracted.siteName ? `<p class="meta">${escapeXml([extracted.byline, extracted.siteName].filter(Boolean).join(" · "))}</p>` : ""}
+${extracted.content}
+</body>
+</html>`;
+}
 
 function toXhtml(html: string, images: Map<string, EmbeddedImage>): string {
   const window = parseHTML(`<div id="c">${html}</div>`);

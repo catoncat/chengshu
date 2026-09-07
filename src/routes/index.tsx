@@ -21,7 +21,7 @@ import {
   formatRelative,
   hostOf,
 } from "@/lib/utils";
-import { READERS, epubViewUrl, isAndroid, openButtonLabel, type ReaderId } from "@/lib/readers";
+import { READERS, isAndroid, openButtonLabel, type ReaderId } from "@/lib/readers";
 import { useSettings } from "@/lib/settings";
 import { deleteBook, listBooks, saveBook, type StoredBook } from "@/lib/history";
 import { downloadBlob, openInReader } from "@/lib/open-epub";
@@ -38,6 +38,7 @@ type ConvertOk = {
   imageCount: number;
   charCount: number;
   epubBase64: string;
+  html: string;
   size: number;
 };
 
@@ -52,6 +53,7 @@ type ResultBook = {
   charCount: number;
   size: number;
   blob: Blob;
+  html: string;
 };
 
 const STEPS = ["抓取网页", "抽出正文", "收进配图", "装订 EPUB"];
@@ -148,6 +150,7 @@ function Home() {
         charCount: data.charCount,
         size: data.size,
         blob,
+        html: data.html,
       };
       setResult(book);
       setStatus("done");
@@ -162,16 +165,16 @@ function Home() {
         siteName: book.siteName,
         excerpt: book.excerpt,
         blob,
+        html: book.html,
       };
       await saveBook(stored);
       setHistory(await listBooks());
-      if (settings.autoOpen && book.sourceUrl.startsWith("http")) {
+      if (settings.autoOpen) {
         void openInReader({
           blob,
           filename: book.filename,
           title: book.title,
-          viewUrl: epubViewUrl(book.sourceUrl),
-          readerId: settings.readerId,
+          html: book.html,
         }).catch(() => undefined);
       }
     } catch (err) {
@@ -194,18 +197,16 @@ function Home() {
 
   async function openResult(book: ResultBook | StoredBook) {
     try {
-      const viewUrl = book.sourceUrl.startsWith("http")
-        ? epubViewUrl(book.sourceUrl)
-        : undefined;
       const outcome = await openInReader({
         blob: book.blob,
         filename: book.filename,
         title: book.title,
-        viewUrl,
-        readerId: settings.readerId,
+        html: book.html,
       });
       if (outcome === "downloaded") {
-        toast.message("已下载 EPUB");
+        toast.message("已保存 EPUB。点底部下载栏的「打开」，选 Librera");
+      } else if (outcome === "already") {
+        toast.message("这本书已经在下载列表里，点那一条的「打开」");
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -311,11 +312,11 @@ function Home() {
               </Button>
               {!isAndroid() ? (
                 <p className="text-center text-xs text-fg-muted">
-                  电脑上请点「下载 EPUB」。手机上会弹出系统列表，选 Librera / KOReader。
+                  电脑上请用「下载 EPUB」。手机 Chrome 会弹出应用列表，选 Librera。
                 </p>
               ) : (
                 <p className="text-center text-xs text-fg-muted">
-                  弹出系统列表后选 Librera 或 KOReader，不要选「下载」。
+                  弹出列表后选 Librera / KOReader。送进去的是书，不是网页链接。
                 </p>
               )}
               <Button
@@ -458,7 +459,7 @@ function Home() {
               </div>
               <p className="mt-4 text-sm font-medium">转完交给谁</p>
               <p className="mt-1 text-sm text-fg-muted">
-                点「用阅读器打开」会弹出系统分享。在列表里选 Librera / KOReader，不要选下载。
+                阅读器只能打开文件，打不开网页链接。点按钮会把书送到系统列表里。
               </p>
               <div className="mt-3 grid gap-2">
                 {READERS.map((reader) => {
@@ -485,8 +486,8 @@ function Home() {
               </div>
               <label className="mt-6 flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3">
                 <span>
-                  <span className="block text-sm font-medium">转完自动弹出阅读器列表</span>
-                  <span className="block text-xs text-fg-muted">关掉就停在结果页，自己点按钮</span>
+                  <span className="block text-sm font-medium">转完自动弹出应用列表</span>
+                  <span className="block text-xs text-fg-muted">需要刚点过按钮。关掉就停在结果页</span>
                 </span>
                 <input
                   type="checkbox"

@@ -13,10 +13,10 @@ export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       readerId: "share",
-      autoOpen: true,
+      autoOpen: false,
       setReaderId: (readerId) => set({ readerId }),
       setAutoOpen: (autoOpen) => set({ autoOpen }),
     }),
-    { name: "chengshu-settings-v3" },
+    { name: "chengshu-settings-v4" },
   ),
 );

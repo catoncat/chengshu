@@ -13,6 +13,7 @@ export type StoredBook = {
   siteName: string;
   excerpt: string;
   blob: Blob;
+  html?: string;
 };
 
 type BookRecord = Omit<StoredBook, "blob"> & { bytes: ArrayBuffer };
@@ -42,6 +43,7 @@ function recordToBook(row: BookRecord): StoredBook {
     byline: row.byline,
     siteName: row.siteName,
     excerpt: row.excerpt,
+    html: row.html,
     blob: new Blob([row.bytes], { type: "application/epub+zip" }),
   };
 }
@@ -63,6 +65,7 @@ export async function saveBook(book: StoredBook): Promise<void> {
       byline: book.byline,
       siteName: book.siteName,
       excerpt: book.excerpt,
+      html: book.html,
       bytes,
     } satisfies BookRecord);
   });
