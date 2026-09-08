@@ -31,6 +31,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import org.json.JSONObject;
 
 public class ShareActivity extends Activity {
   private static final String API = "https://0nl.onl/export";
@@ -96,6 +97,12 @@ public class ShareActivity extends Activity {
     super.onNewIntent(intent);
     setIntent(intent);
     handleIntent(intent);
+  }
+
+  @Override
+  protected void onDestroy() {
+    PageExtractor.cancel();
+    super.onDestroy();
   }
 
   private void handleIntent(Intent intent) {
@@ -429,27 +436,36 @@ public class ShareActivity extends Activity {
     converting.setVisibility(View.VISIBLE);
     progress.setVisibility(View.VISIBLE);
     status.setText(existing == null || force ? "成书中" : "转成 " + format.title);
-    new Thread(
-            () -> {
-              try {
-                Downloaded downloaded = download(pageUrl, format);
-                String savedTitle =
-                    downloaded.title != null && !downloaded.title.isEmpty()
-                        ? downloaded.title
-                        : (title == null || title.isEmpty() ? Library.hostOf(pageUrl) : title);
-                Library.Item item = library.save(pageUrl, savedTitle, format, downloaded.body);
-                runOnUiThread(
-                    () -> openFile(library.file(item, format), format, item.title, fromShare));
-              } catch (Exception e) {
-                runOnUiThread(
+    PageExtractor.extract(
+        this,
+        pageUrl,
+        (article) ->
+            new Thread(
                     () -> {
-                      progress.setVisibility(View.GONE);
-                      status.setText(e.getMessage());
-                    });
-              }
-            },
-            "chengshu-convert")
-        .start();
+                      try {
+                        Downloaded downloaded = download(pageUrl, format, article);
+                        String savedTitle =
+                            downloaded.title != null && !downloaded.title.isEmpty()
+                                ? downloaded.title
+                                : (title == null || title.isEmpty()
+                                    ? Library.hostOf(pageUrl)
+                                    : title);
+                        Library.Item item =
+                            library.save(pageUrl, savedTitle, format, downloaded.body);
+                        runOnUiThread(
+                            () ->
+                                openFile(
+                                    library.file(item, format), format, item.title, fromShare));
+                      } catch (Exception e) {
+                        runOnUiThread(
+                            () -> {
+                              progress.setVisibility(View.GONE);
+                              status.setText(e.getMessage());
+                            });
+                      }
+                    },
+                    "chengshu-convert")
+                .start());
   }
 
   private void openItem(Library.Item item, Format format) {
@@ -538,7 +554,41 @@ public class ShareActivity extends Activity {
     return dot > 0 ? name.substring(0, dot) : name;
   }
 
-  private Downloaded download(String pageUrl, Format format) throws Exception {
+  private Downloaded download(String pageUrl, Format format, PageExtractor.Article article)
+      throws Exception {
+    if (article != null && article.content.length() > 80) {
+      try {
+        return postPack(pageUrl, format, article);
+      } catch (Exception ignored) {
+        /* old server or pack failed — fetch on the server instead */
+      }
+    }
+    return getExport(pageUrl, format);
+  }
+
+  private Downloaded postPack(String pageUrl, Format format, PageExtractor.Article article)
+      throws Exception {
+    JSONObject payload = new JSONObject();
+    payload.put("url", pageUrl);
+    payload.put("title", article.title);
+    payload.put("byline", article.byline);
+    payload.put("html", article.content);
+    byte[] sent = payload.toString().getBytes(StandardCharsets.UTF_8);
+    String endpoint = API + "?format=" + format.id;
+    HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
+    conn.setConnectTimeout(15000);
+    conn.setReadTimeout(60000);
+    conn.setDoOutput(true);
+    conn.setRequestMethod("POST");
+    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+    conn.setRequestProperty("User-Agent", "Chengshu/" + BuildConfig.VERSION_NAME);
+    conn.setRequestProperty("Accept", format.mime + ",*/*");
+    conn.setFixedLengthStreamingMode(sent.length);
+    conn.getOutputStream().write(sent);
+    return readDownload(conn, format);
+  }
+
+  private Downloaded getExport(String pageUrl, Format format) throws Exception {
     String endpoint =
         API
             + "?format="
@@ -551,6 +601,10 @@ public class ShareActivity extends Activity {
     conn.setInstanceFollowRedirects(true);
     conn.setRequestProperty("User-Agent", "Chengshu/" + BuildConfig.VERSION_NAME);
     conn.setRequestProperty("Accept", format.mime + ",*/*");
+    return readDownload(conn, format);
+  }
+
+  private Downloaded readDownload(HttpURLConnection conn, Format format) throws Exception {
     int code = conn.getResponseCode();
     InputStream in = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
     ByteArrayOutputStream out = new ByteArrayOutputStream();

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createHash } from "node:crypto";
 import {
   convertToFile,
   parseExportFormat,
@@ -13,6 +14,10 @@ const TTL_MS = 45 * 1000;
 const MAX_ENTRIES = 32;
 
 function cacheKey(format: ExportFormat, body: ConvertRequest) {
+  if (body.html?.trim()) {
+    const h = createHash("sha1").update(body.html).digest("hex").slice(0, 16);
+    return `${format}:html:${h}:${body.url?.trim() || ""}`;
+  }
   return `${format}:${body.url?.trim() || `text:${body.title ?? ""}:${(body.text ?? "").slice(0, 120)}`}`;
 }
 
@@ -35,8 +40,62 @@ function put(key: string, value: Cached) {
 
 function disposition(filename: string) {
   const encoded = encodeURIComponent(filename);
-  const ascii = filename.replace(/[^\w.\-]+/g, "_");
-  return `inline; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+  const ascii = filename.replace(/[^\w.\-]+/g, "_").replace(/^_+/, "");
+  const fallback = ascii && !ascii.startsWith(".") ? ascii : "book.epub";
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+function fromQuery(src: URL): ConvertRequest {
+  return {
+    url: src.searchParams.get("url") ?? undefined,
+    text: src.searchParams.get("text") ?? undefined,
+    title: src.searchParams.get("title") ?? undefined,
+  };
+}
+
+function fromJson(raw: unknown): ConvertRequest {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const str = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : undefined);
+  return {
+    url: str("url"),
+    text: str("text"),
+    title: str("title"),
+    html: str("html"),
+    byline: str("byline"),
+  };
+}
+
+async function respond(format: ExportFormat, body: ConvertRequest) {
+  if (!body.url && !body.text && !body.html) {
+    return Response.json({ error: "缺少链接" }, { status: 400 });
+  }
+  const key = cacheKey(format, body);
+  let cached = take(key);
+  if (!cached) {
+    const result = await convertToFile(body, format);
+    cached = {
+      bytes: result.bytes,
+      filename: result.filename,
+      mime: result.mime,
+      title: result.title,
+      at: Date.now(),
+    };
+    put(key, cached);
+  }
+  return new Response(new Uint8Array(cached.bytes), {
+    headers: {
+      "content-type": cached.mime,
+      "content-disposition": disposition(cached.filename),
+      "cache-control": "private, no-store, no-cache, max-age=0",
+      "x-content-type-options": "nosniff",
+      "X-Title": encodeURIComponent(cached.title || cached.filename.replace(/\.[^.]+$/, "")),
+    },
+  });
+}
+
+function fail(err: unknown) {
+  const message = err instanceof Error ? err.message : "转换失败";
+  return Response.json({ error: message }, { status: 400 });
 }
 
 export const Route = createFileRoute("/export")({
@@ -45,40 +104,19 @@ export const Route = createFileRoute("/export")({
       GET: async ({ request }) => {
         try {
           const src = new URL(request.url);
-          const format = parseExportFormat(src.searchParams.get("format"));
-          const body: ConvertRequest = {
-            url: src.searchParams.get("url") ?? undefined,
-            text: src.searchParams.get("text") ?? undefined,
-            title: src.searchParams.get("title") ?? undefined,
-          };
-          if (!body.url && !body.text) {
-            return Response.json({ error: "缺少链接" }, { status: 400 });
-          }
-          const key = cacheKey(format, body);
-          let cached = take(key);
-          if (!cached) {
-            const result = await convertToFile(body, format);
-            cached = {
-              bytes: result.bytes,
-              filename: result.filename,
-              mime: result.mime,
-              title: result.title,
-              at: Date.now(),
-            };
-            put(key, cached);
-          }
-          return new Response(new Uint8Array(cached.bytes), {
-            headers: {
-              "content-type": cached.mime,
-              "content-disposition": disposition(cached.filename),
-              "cache-control": "private, no-store, no-cache, max-age=0",
-              "x-content-type-options": "nosniff",
-              "X-Title": encodeURIComponent(cached.title || cached.filename.replace(/\.[^.]+$/, "")),
-            },
-          });
+          return await respond(parseExportFormat(src.searchParams.get("format")), fromQuery(src));
         } catch (err) {
-          const message = err instanceof Error ? err.message : "转换失败";
-          return Response.json({ error: message }, { status: 400 });
+          return fail(err);
+        }
+      },
+      POST: async ({ request }) => {
+        try {
+          const src = new URL(request.url);
+          const format = parseExportFormat(src.searchParams.get("format"));
+          const body = fromJson(await request.json().catch(() => ({})));
+          return await respond(format, body);
+        } catch (err) {
+          return fail(err);
         }
       },
     },

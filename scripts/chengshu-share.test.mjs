@@ -79,3 +79,27 @@ test("android offers PDF next to EPUB", () => {
   assert.match(format, /application\/pdf/);
   assert.match(manifest, /application\/pdf/);
 });
+
+test("share extracts in a WebView with Defuddle then POSTs HTML to pack", () => {
+  const extractor = fs.readFileSync(
+    "android/app/src/main/java/onl/nl0/chengshu/PageExtractor.java",
+    "utf8",
+  );
+  assert.match(extractor, /setJavaScriptEnabled\(true\)/);
+  assert.match(extractor, /defuddle\.js/);
+  assert.match(extractor, /new C\(document/);
+  assert.match(activity, /PageExtractor\.extract/);
+  assert.match(activity, /postPack/);
+  assert.match(activity, /"html"/);
+  assert.equal(fs.existsSync("android/app/src/main/assets/defuddle.js"), true);
+});
+
+
+test("server export accepts already-extracted HTML", () => {
+  const exportTs = fs.readFileSync("src/routes/export.ts", "utf8");
+  const pipe = fs.readFileSync("src/lib/convert/pipeline.server.ts", "utf8");
+  assert.match(exportTs, /POST:/);
+  assert.match(exportTs, /str\("html"\)/);
+  assert.match(pipe, /input\.html\?\.trim\(\)/);
+  assert.match(pipe, /async function extract\(/);
+});

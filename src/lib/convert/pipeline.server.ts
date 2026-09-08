@@ -18,6 +18,8 @@ export type ConvertRequest = {
   url?: string;
   text?: string;
   title?: string;
+  html?: string;
+  byline?: string;
 };
 
 export type ConvertResult = {
@@ -74,11 +76,7 @@ type EmbeddedImage = {
 };
 
 export async function convertToEpub(input: ConvertRequest): Promise<ConvertResult> {
-  const url = input.url?.trim();
-  const text = input.text?.trim();
-  const extracted = url
-    ? await extractFromUrl(url)
-    : extractFromText(text ?? "", input.title);
+  const extracted = await extract(input);
   if (!extracted.content.replace(/<[^>]+>/g, "").trim()) {
     throw new Error("没提取到正文，换一篇或把全文贴进来");
   }
@@ -121,11 +119,7 @@ export async function convertToFile(
     };
   }
 
-  const url = input.url?.trim();
-  const text = input.text?.trim();
-  const extracted = url
-    ? await extractFromUrl(url)
-    : extractFromText(text ?? "", input.title);
+  const extracted = await extract(input);
   const plain = extracted.content.replace(/<[^>]+>/g, "").trim();
   if (!plain) throw new Error("没提取到正文，换一篇或把全文贴进来");
 
@@ -176,6 +170,25 @@ export async function convertToFile(
     mime: MIME.txt,
     title: extracted.title,
   };
+}
+
+async function extract(input: ConvertRequest): Promise<Extracted> {
+  const html = input.html?.trim();
+  if (html) {
+    let sourceUrl = "";
+    if (input.url?.trim()) sourceUrl = assertPublicHttpUrl(input.url.trim()).href;
+    return {
+      title: bookTitle(input.title, hostName(sourceUrl) || "未命名"),
+      byline: (input.byline ?? "").trim(),
+      siteName: hostName(sourceUrl),
+      excerpt: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 220),
+      content: html,
+      sourceUrl,
+    };
+  }
+  const url = input.url?.trim();
+  if (url) return extractFromUrl(url);
+  return extractFromText(input.text?.trim() ?? "", input.title);
 }
 
 async function extractFromUrl(rawUrl: string): Promise<Extracted> {

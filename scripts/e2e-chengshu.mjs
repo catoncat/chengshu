@@ -21,6 +21,7 @@ async function main() {
     mustInclude: ["Transformer", "Vaswani"],
     mustNotInclude: ["Loading refracted workspace"],
   });
+  await checkPackedHtml(BASE, log);
 
   if (errors.length) {
     console.error(`\n${errors.length} failed`);
@@ -89,7 +90,23 @@ async function checkMarkdown(base, sample, log, { expectTitle, mustInclude, must
   for (const needle of mustNotInclude) log(!text.includes(needle), `md excludes ${needle}`);
 }
 
+async function checkPackedHtml(base, log) {
+  const html =
+    "<p>这是客户端已经抽好的正文，服务端只负责打包成 Markdown，不必再去抓页面。</p><p>第二段还在这里。</p>";
+  const res = await fetch(`${base}/export?format=md`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "cache-control": "no-cache" },
+    body: JSON.stringify({ title: "成书", html, url: "https://0nl.onl/" }),
+  });
+  const text = await res.text();
+  const xtitle = decodeURIComponent(res.headers.get("x-title") || "");
+  log(res.ok, `POST /export md packed html → ${res.status}`);
+  log(xtitle.includes("成书"), `packed X-Title=${xtitle || "?"}`);
+  log(text.includes("已经抽好"), "packed body kept");
+}
+
 main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
