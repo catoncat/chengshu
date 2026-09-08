@@ -34,6 +34,11 @@ export const Route = createRootRoute({
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("chengshu-theme");var d=t==="dark"||(t!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.add(d?"dark":"light");}catch(e){}})();`,
+          }}
+        />
       </head>
       <body className="bg-background font-mono text-muted-foreground antialiased">
         <PreviewHostBridge />
