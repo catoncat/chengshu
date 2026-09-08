@@ -16,7 +16,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "从 Chrome 分享网页，做成书，送到阅读器。",
+        content: "在手机浏览器里看到想细读的长文，点系统分享，选成书。",
       },
       { name: "theme-color", content: "#ffffff", media: "(prefers-color-scheme: light)" },
       { name: "theme-color", content: "#000000", media: "(prefers-color-scheme: dark)" },
