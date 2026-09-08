@@ -37,6 +37,7 @@ public class ShareActivity extends Activity {
   private static final String KEY_FORMAT = "format";
   private static final String KEY_READER = "reader_package";
   private static final String ASK = "";
+  private static final long SHARE_FRESH_MS = 45_000;
   private static final Pattern URL_RE = Pattern.compile("https?://\\S+");
 
   private View home;
@@ -75,7 +76,7 @@ public class ShareActivity extends Activity {
     findViewById(R.id.rowHidden).setOnClickListener(v -> pickHidden());
     findViewById(R.id.rowUpdate).setOnClickListener(v -> onUpdateTap());
     String pageUrl = extractUrl(getIntent());
-    if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(getIntent()), currentFormat(), true);
+    if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(getIntent()), currentFormat(), true, false);
     else showHome();
   }
 
@@ -84,7 +85,7 @@ public class ShareActivity extends Activity {
     super.onNewIntent(intent);
     setIntent(intent);
     String pageUrl = extractUrl(intent);
-    if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(intent), currentFormat(), true);
+    if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(intent), currentFormat(), true, false);
     else showHome();
   }
 
@@ -156,16 +157,18 @@ public class ShareActivity extends Activity {
   }
 
   private void itemMenu(Library.Item item) {
-    String[] actions = new String[Format.ALL.length + 2];
+    String[] actions = new String[Format.ALL.length + 3];
     actions[0] = "打开";
     for (int i = 0; i < Format.ALL.length; i++) {
       Format format = Format.ALL[i];
       actions[i + 1] = (library.has(item, format) ? "打开 " : "转成 ") + format.title;
     }
+    actions[actions.length - 2] = "重新抓取";
     actions[actions.length - 1] = "删除";
     new AlertDialog.Builder(this).setTitle(item.title).setItems(actions, (d, which) -> {
       if (which == 0) openItem(item, Format.of(item.lastFormat));
       else if (which == actions.length - 1) { library.delete(item); refreshHistory(); }
+      else if (which == actions.length - 2) convertAndOpen(item.url, item.title, Format.of(item.lastFormat), false, true);
       else openItem(item, Format.ALL[which - 1]);
     }).show();
   }
@@ -230,16 +233,17 @@ public class ShareActivity extends Activity {
     }).show();
   }
 
-  private void convertAndOpen(String pageUrl, String title, Format format, boolean finishAfter) {
+  private void convertAndOpen(String pageUrl, String title, Format format, boolean finishAfter, boolean force) {
     Library.Item existing = library.findByUrl(pageUrl);
-    if (existing != null && library.has(existing, format)) {
+    long age = existing == null ? Long.MAX_VALUE : System.currentTimeMillis() - existing.updated;
+    if (!force && existing != null && library.has(existing, format) && age < SHARE_FRESH_MS) {
       openFile(library.file(existing, format), format, finishAfter);
       return;
     }
     home.setVisibility(View.GONE);
     converting.setVisibility(View.VISIBLE);
     progress.setVisibility(View.VISIBLE);
-    status.setText(existing == null ? "成书中" : "转成 " + format.title);
+    status.setText(existing == null || force ? "成书中" : "转成 " + format.title);
     new Thread(() -> {
       try {
         Downloaded downloaded = download(pageUrl, format);
@@ -258,7 +262,7 @@ public class ShareActivity extends Activity {
       openFile(library.file(item, format), format, false);
       return;
     }
-    convertAndOpen(item.url, item.title, format, false);
+    convertAndOpen(item.url, item.title, format, false, false);
   }
 
   private void openFile(File file, Format format, boolean finishAfter) {
