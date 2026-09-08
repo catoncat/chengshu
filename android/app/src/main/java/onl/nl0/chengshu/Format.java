@@ -19,6 +19,8 @@ final class Format {
 
   static final Format EPUB =
       new Format("epub", "EPUB", "阅读器翻页的书", "application/epub+zip", ".epub", new String[] {"application/epub"});
+  static final Format PDF =
+      new Format("pdf", "PDF", "打印、跨设备都好开", "application/pdf", ".pdf", new String[] {});
   static final Format MD =
       new Format(
           "md",
@@ -32,7 +34,7 @@ final class Format {
   static final Format TXT =
       new Format("txt", "纯文本", "任何能看字的 App", "text/plain", ".txt", new String[] {});
 
-  static final Format[] ALL = {EPUB, MD, HTML, TXT};
+  static final Format[] ALL = {EPUB, PDF, MD, HTML, TXT};
 
   static Format of(String id) {
     for (Format format : ALL) {

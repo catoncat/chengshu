@@ -21,7 +21,7 @@ function English() {
       <main className="mx-auto max-w-[744px] px-5 pt-10 pb-24 text-muted-foreground sm:px-8 sm:pt-14">
         <article className="max-w-[600px] leading-[1.75] [&_p+p]:mt-[1.5em] [&_ul]:mt-[1.5em]" lang="en">
           <p className="text-foreground">
-            When you hit a long piece in the phone browser that you actually want to sit with, use the system share sheet and pick 成书. It pulls the article, turns it into EPUB, Markdown, or plain text, and opens WeChat Reading, KOReader, or whatever you use — or hands Markdown to an AI.
+            When you hit a long piece in the phone browser that you actually want to sit with, use the system share sheet and pick 成书. It pulls the article, turns it into EPUB, PDF, Markdown, or plain text, and opens WeChat Reading, KOReader, or whatever you use — or hands Markdown to an AI.
           </p>
           <p>Once the format and destination are set, it does not need to sit in the background. You only see it in the share sheet.</p>
           <p>
@@ -39,7 +39,7 @@ function English() {
           <p>This tool does three things:</p>
           <ul className="list-disc space-y-2 pl-5">
             <li>Sit in the system share sheet.</li>
-            <li>Take a URL, strip it to the article, lay it out as EPUB, Markdown, or plain text.</li>
+            <li>Take a URL, strip it to the article, lay it out as EPUB, PDF, Markdown, or plain text.</li>
             <li>Hand the file to any app that can open it — a reader, or an AI.</li>
           </ul>
           <p>

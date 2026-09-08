@@ -69,3 +69,13 @@ test("format settings include ask-every-time", () => {
   assert.match(activity, /formatIsAsk/);
   assert.match(activity, /migrated_format_ask/);
 });
+
+test("android offers PDF next to EPUB", () => {
+  const format = fs.readFileSync(
+    "android/app/src/main/java/onl/nl0/chengshu/Format.java",
+    "utf8",
+  );
+  assert.match(format, /static final Format PDF/);
+  assert.match(format, /application\/pdf/);
+  assert.match(manifest, /application\/pdf/);
+});

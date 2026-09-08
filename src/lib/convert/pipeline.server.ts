@@ -4,6 +4,7 @@ import { marked } from "marked";
 import { assertPublicHttpUrl, isPublicHttpUrl } from "./ssrf";
 import { sanitizeFilename, bookTitle } from "@/lib/utils";
 import { buildEpub } from "./epub-pack";
+import { buildPdf } from "./pdf-pack";
 import { articleFromUnknown, isThinHtml, jsonCandidateUrls } from "./json-article";
 import { Defuddle } from "defuddle/node";
 
@@ -34,7 +35,7 @@ export type ConvertResult = {
   size: number;
 };
 
-export const EXPORT_FORMATS = ["epub", "html", "md", "txt"] as const;
+export const EXPORT_FORMATS = ["epub", "pdf", "html", "md", "txt"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export type ConvertedFile = {
@@ -46,13 +47,14 @@ export type ConvertedFile = {
 
 const MIME: Record<ExportFormat, string> = {
   epub: "application/epub+zip",
+  pdf: "application/pdf",
   html: "text/html; charset=utf-8",
   md: "text/markdown; charset=utf-8",
   txt: "text/plain; charset=utf-8",
 };
 
 export function parseExportFormat(raw: string | null | undefined): ExportFormat {
-  if (raw === "html" || raw === "md" || raw === "txt" || raw === "epub") return raw;
+  if (raw === "html" || raw === "md" || raw === "txt" || raw === "epub" || raw === "pdf") return raw;
   return "epub";
 }
 
@@ -135,6 +137,26 @@ export async function convertToFile(
       bytes: Buffer.from(html, "utf8"),
       filename: `${stem}.html`,
       mime: MIME.html,
+      title: extracted.title,
+    };
+  }
+  if (format === "pdf") {
+    const images = await embedImages(extracted.content, extracted.sourceUrl);
+    let html = extracted.content;
+    for (const [src, img] of images.rewritten) html = html.split(src).join(img.href);
+    const pdf = await buildPdf({
+      title: extracted.title,
+      byline: extracted.byline,
+      siteName: extracted.siteName,
+      excerpt: extracted.excerpt,
+      sourceUrl: extracted.sourceUrl,
+      html,
+      images: images.files,
+    });
+    return {
+      bytes: Buffer.from(pdf),
+      filename: `${stem}.pdf`,
+      mime: MIME.pdf,
       title: extracted.title,
     };
   }

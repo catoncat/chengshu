@@ -15,6 +15,7 @@ async function main() {
   };
 
   await checkEpub(BASE, SAMPLE, log, { expectTitle: "成书", ncx: true });
+  await checkPdf(BASE, SAMPLE, log, { expectTitle: "成书" });
   await checkMarkdown(BASE, HARD, log, {
     expectTitle: "Attention Is All You Need",
     mustInclude: ["Transformer", "Vaswani"],
@@ -62,6 +63,19 @@ async function checkEpub(base, sample, log, { expectTitle, ncx }) {
     log(/<h1>[^<]+<\/h1>/.test(chapter), "chapter has h1 title");
     log(!/<body>\s*<p/.test(chapter) || /<body title="/.test(chapter), "body carries a title");
   }
+}
+
+async function checkPdf(base, sample, log, { expectTitle }) {
+  const exportUrl = `${base}/export?format=pdf&url=${encodeURIComponent(sample)}`;
+  const res = await fetch(exportUrl, { headers: { "cache-control": "no-cache" } });
+  const buf = Buffer.from(await res.arrayBuffer());
+  log(res.ok, `GET /export pdf → ${res.status}`);
+  log((res.headers.get("content-type") || "").includes("application/pdf"), "content-type pdf");
+  const xtitle = decodeURIComponent(res.headers.get("x-title") || "");
+  log(Boolean(xtitle) && xtitle.toLowerCase() !== "body", `pdf X-Title=${xtitle || "?"}`);
+  if (expectTitle) log(xtitle.includes(expectTitle), `pdf title contains ${expectTitle}`);
+  log(buf.subarray(0, 5).toString() === "%PDF-", "pdf magic");
+  log(buf.length > 1500, `pdf size ${buf.length}`);
 }
 
 async function checkMarkdown(base, sample, log, { expectTitle, mustInclude, mustNotInclude }) {
