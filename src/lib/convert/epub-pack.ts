@@ -140,17 +140,20 @@ export async function buildEpub(input: {
 
   zip.file(
     "OEBPS/style.css",
-    `body{font-family:"Songti SC","Noto Serif CJK SC","Source Han Serif SC",Georgia,serif;line-height:1.75;font-size:1em;margin:0;padding:0}
+    `body{font-family:"Songti SC","Noto Serif CJK SC","Source Han Serif SC",Georgia,serif;line-height:1.8;font-size:1em;margin:0;padding:0;line-break:strict;word-break:normal;hyphens:none}
 h1{font-size:1.55em;line-height:1.3;margin:0 0 .8em;text-indent:0}
 h2,h3{line-height:1.35;margin:1.2em 0 .5em;text-indent:0}
-p{margin:.75em 0;text-indent:2em}
-p.meta{text-indent:0;font-size:.9em;opacity:.72}
+p{margin:.65em 0;text-indent:2em;text-align:justify}
+p.meta{text-indent:0;text-align:left;font-size:.9em;opacity:.72}
 img{max-width:100%;height:auto;display:block;margin:1em auto}
+figcaption{text-indent:0;text-align:center;font-size:.9em;opacity:.8;margin:.2em 0 1em}
 blockquote{margin:1em 0;padding-left:1em;border-left:3px solid #c8c1b4;opacity:.92}
+blockquote p{text-indent:0;text-align:left}
 a{color:inherit}
 pre,code{font-family:ui-monospace,monospace;font-size:.92em}
+pre{text-indent:0;white-space:pre-wrap;line-break:anywhere}
 ul,ol{padding-left:1.4em}
-li{margin:.25em 0}`,
+li{margin:.25em 0;text-indent:0}`,
   );
 
   for (const img of input.images) {

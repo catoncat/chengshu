@@ -2,6 +2,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { parseHTML } from "linkedom";
 import { BOOK_FONT } from "./book-font.ts";
+import { wrapText } from "./break-line.ts";
 
 export type PdfImage = {
   href: string;
@@ -72,26 +73,7 @@ function usableTitle(value: string, fallback: string) {
 }
 
 function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
-  const lines: string[] = [];
-  for (const para of text.split("\n")) {
-    if (!para) {
-      lines.push("");
-      continue;
-    }
-    const tokens = para.split(/(\s+)|(?=[\u3400-\u9fff])/).filter((t) => t);
-    let line = "";
-    for (const tok of tokens) {
-      const next = line + tok;
-      if (line && font.widthOfTextAtSize(next, size) > maxWidth) {
-        lines.push(line.replace(/\s+$/g, ""));
-        line = tok.replace(/^\s+/g, "");
-      } else {
-        line = next;
-      }
-    }
-    if (line) lines.push(line);
-  }
-  return lines;
+  return wrapText(text, maxWidth, (s) => font.widthOfTextAtSize(s, size));
 }
 
 export async function buildPdf(input: {
@@ -135,7 +117,7 @@ export async function buildPdf(input: {
     lineGap = 3.5,
     paraGap = 8,
   ) => {
-    const height = size * 1.35;
+    const height = size * 1.75;
     for (const line of lines) {
       ensure(height + lineGap);
       page.drawText(line || " ", {

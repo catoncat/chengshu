@@ -49,3 +49,12 @@ test("filename helpers never emit body", () => {
   assert.equal(sanitizeFilename("body"), "article");
   assert.equal(sanitizeFilename("成书"), "成书");
 });
+
+test("EPUB CSS is book-like and leaves reflow to the reader", async () => {
+  const zip = await JSZip.loadAsync(await pack("成书"));
+  const css = await zip.file("OEBPS/style.css")!.async("string");
+  assert.match(css, /text-indent:2em/);
+  assert.match(css, /text-align:justify/);
+  assert.match(css, /line-break:strict/);
+  assert.match(css, /Source Han Serif/);
+});
