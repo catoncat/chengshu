@@ -23,7 +23,7 @@ function textOf(el: { textContent?: string | null }) {
 }
 
 function blocksFromHtml(html: string): Block[] {
-  const { document } = parseHTML(`<body>${html}</body>`);
+  const { document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
   const out: Block[] = [];
 
   function visit(node: {
@@ -33,7 +33,11 @@ function blocksFromHtml(html: string): Block[] {
     getAttribute?: (n: string) => string | null;
     childNodes: ArrayLike<unknown>;
   }) {
-    if (node.nodeType === 3) return;
+    if (node.nodeType === 3) {
+      const t = (node.textContent || "").replace(/\s+/g, " ").trim();
+      if (t) out.push({ kind: "p", text: t });
+      return;
+    }
     const tag = (node.nodeName || "").toLowerCase();
     if (tag === "img") {
       out.push({ kind: "img", text: "", src: node.getAttribute?.("src") || "" });
@@ -55,6 +59,9 @@ function blocksFromHtml(html: string): Block[] {
       out.push({ kind: "hr", text: "" });
       return;
     }
+    if (tag === "br") {
+      return;
+    }
     for (const child of Array.from(node.childNodes)) visit(child as typeof node);
   }
 
@@ -73,7 +80,17 @@ function usableTitle(value: string, fallback: string) {
 }
 
 function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
-  return wrapText(text, maxWidth, (s) => font.widthOfTextAtSize(s, size));
+  const safe = [...text]
+    .map((ch) => {
+      try {
+        font.widthOfTextAtSize(ch, size);
+        return ch;
+      } catch {
+        return ch === " " ? " " : "";
+      }
+    })
+    .join("");
+  return wrapText(safe, maxWidth, (s) => font.widthOfTextAtSize(s, size));
 }
 
 export async function buildPdf(input: {
@@ -126,7 +143,6 @@ export async function buildPdf(input: {
         size,
         font,
         color,
-        maxWidth: contentWidth - indent + 1,
       });
       y -= height + lineGap;
     }

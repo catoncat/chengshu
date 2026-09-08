@@ -103,3 +103,13 @@ test("server export accepts already-extracted HTML", () => {
   assert.match(pipe, /input\.html\?\.trim\(\)/);
   assert.match(pipe, /async function extract\(/);
 });
+
+test("PDF pack parses article HTML as a full document so body is not dropped", () => {
+  const pack = fs.readFileSync("src/lib/convert/pdf-pack.ts", "utf8");
+  assert.match(pack, /<!doctype html><html><body>/);
+  assert.doesNotMatch(pack, /parseHTML\(`<body>\$\{html\}<\/body>`\)/);
+  const exportTs = fs.readFileSync("src/routes/export.ts", "utf8");
+  assert.match(exportTs, /book\$\{ext/);
+  assert.doesNotMatch(exportTs, /book\.epub"/);
+});
+

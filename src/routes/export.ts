@@ -40,8 +40,9 @@ function put(key: string, value: Cached) {
 
 function disposition(filename: string) {
   const encoded = encodeURIComponent(filename);
-  const ascii = filename.replace(/[^\w.\-]+/g, "_").replace(/^_+/, "");
-  const fallback = ascii && !ascii.startsWith(".") ? ascii : "book.epub";
+  const ext = (filename.match(/\.[A-Za-z0-9]+$/) || [""])[0];
+  const ascii = filename.replace(/[^\w.\-]+/g, "_").replace(/^_+/, "").replace(/_+/g, "_");
+  const fallback = ascii && !ascii.startsWith(".") ? ascii : `book${ext || ".bin"}`;
   return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 

@@ -34,3 +34,24 @@ test("PDF falls back when title is the HTML tag body", async () => {
   const doc = await PDFDocument.load(bytes);
   assert.equal(doc.getTitle(), "成书");
 });
+
+test("PDF includes article body, not just the title page chrome", async () => {
+  const html = Array.from(
+    { length: 36 },
+    (_, i) => `<p>这是第${i + 1}段正文，用来确认 PDF 真正画出了段落而不是只有封面。</p>`,
+  ).join("");
+  const bytes = await buildPdf({
+    title: "成书",
+    byline: "",
+    siteName: "0nl.onl",
+    excerpt: "",
+    sourceUrl: "https://0nl.onl/",
+    html,
+    images: [],
+  });
+  const doc = await PDFDocument.load(bytes);
+  assert.ok(
+    doc.getPageCount() >= 2,
+    `expected body to overflow onto page 2, got ${doc.getPageCount()}`,
+  );
+});
