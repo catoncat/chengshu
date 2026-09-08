@@ -9,7 +9,7 @@ import {
 type Cached = { bytes: Buffer; filename: string; mime: string; title: string; at: number };
 
 const CACHE = new Map<string, Cached>();
-const TTL_MS = 30 * 60 * 1000;
+const TTL_MS = 45 * 1000;
 const MAX_ENTRIES = 32;
 
 function cacheKey(format: ExportFormat, body: ConvertRequest) {
@@ -71,7 +71,7 @@ export const Route = createFileRoute("/export")({
             headers: {
               "content-type": cached.mime,
               "content-disposition": disposition(cached.filename),
-              "cache-control": "private, max-age=1800",
+              "cache-control": "private, no-store, no-cache, max-age=0",
               "x-content-type-options": "nosniff",
               "X-Title": encodeURIComponent(cached.title || cached.filename.replace(/\.[^.]+$/, "")),
             },

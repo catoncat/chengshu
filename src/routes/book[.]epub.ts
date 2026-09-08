@@ -4,7 +4,7 @@ import { convertToEpub, type ConvertRequest } from "@/lib/convert/pipeline.serve
 type Cached = { bytes: Buffer; filename: string; at: number };
 
 const CACHE = new Map<string, Cached>();
-const TTL_MS = 30 * 60 * 1000;
+const TTL_MS = 45 * 1000;
 const MAX_ENTRIES = 24;
 
 function cacheKey(body: ConvertRequest) {
@@ -62,7 +62,7 @@ export const Route = createFileRoute("/book.epub")({
             headers: {
               "content-type": "application/epub+zip",
               "content-disposition": disposition(cached.filename),
-              "cache-control": "private, max-age=1800",
+              "cache-control": "private, no-store, no-cache, max-age=0",
               "x-content-type-options": "nosniff",
             },
           });
