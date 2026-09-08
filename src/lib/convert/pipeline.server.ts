@@ -4,6 +4,8 @@ import { marked } from "marked";
 import { assertPublicHttpUrl, isPublicHttpUrl } from "./ssrf";
 import { sanitizeFilename, bookTitle } from "@/lib/utils";
 import { buildEpub } from "./epub-pack";
+import { articleFromUnknown, isThinHtml, jsonCandidateUrls } from "./json-article";
+import { Defuddle } from "defuddle/node";
 
 const UA =
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36";
@@ -158,16 +160,31 @@ async function extractFromUrl(rawUrl: string): Promise<Extracted> {
   const parsed = assertPublicHttpUrl(rawUrl);
   const sourceUrl = parsed.href;
   const html = await fetchHtml(sourceUrl);
-  const article = readabilityExtract(html, sourceUrl);
-  const textLen = article?.content.replace(/<[^>]+>/g, "").length ?? 0;
-  if (article && textLen >= 180) return article;
+  const thin = isThinHtml(html);
+  const defuddled = await defuddleExtract(html, sourceUrl);
+  const readable = readabilityExtract(html, sourceUrl);
+  let best = longerExtract(defuddled, readable);
+  if (thin || textLen(best) < 180) {
+    const fromJson = await jsonApiExtract(sourceUrl);
+    best = longerExtract(best, fromJson);
+  }
+  if (textLen(best) >= 180) return best!;
 
   const fromJina = await jinaExtract(sourceUrl);
-  if (fromJina && (fromJina.content.replace(/<[^>]+>/g, "").length > textLen)) {
-    return fromJina;
-  }
-  if (article) return article;
+  best = longerExtract(best, fromJina);
+  if (best && textLen(best) >= 80) return best;
   throw new Error("这个页面拦了抓取，或正文太短");
+}
+
+function textLen(extracted: Extracted | null | undefined): number {
+  if (!extracted?.content) return 0;
+  return extracted.content.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().length;
+}
+
+function longerExtract(a: Extracted | null | undefined, b: Extracted | null | undefined): Extracted | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return textLen(b) > textLen(a) ? b : a;
 }
 
 function extractFromText(text: string, title?: string): Extracted {
@@ -225,6 +242,54 @@ function charsetFromMeta(html: string): string | null {
     html.match(/charset=["']?([\w-]+)/i) ||
     html.match(/charset=([\w-]+)/i);
   return match?.[1] ?? null;
+}
+
+async function defuddleExtract(html: string, url: string): Promise<Extracted | null> {
+  try {
+    const withBase = injectBase(html, url);
+    const { document } = parseHTML(withBase);
+    const parsed = await Defuddle(document as unknown as Document, url, { useAsync: false });
+    if (!parsed?.content) return null;
+    const title = bookTitle(parsed.title, hostName(url) || "未命名");
+    return {
+      title,
+      byline: (parsed.author ?? "").trim(),
+      siteName: (parsed.site || hostName(url)).trim(),
+      excerpt: (parsed.description || "").trim().slice(0, 220),
+      content: parsed.content,
+      sourceUrl: url,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function jsonApiExtract(pageUrl: string): Promise<Extracted | null> {
+  const candidates = jsonCandidateUrls(pageUrl);
+  for (const href of candidates) {
+    try {
+      if (!isPublicHttpUrl(href)) continue;
+      const res = await fetch(href, {
+        redirect: "follow",
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+        headers: {
+          "User-Agent": UA,
+          Accept: "application/json,text/json;q=0.9,*/*;q=0.1",
+        },
+      });
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.byteLength < 40 || buf.byteLength > MAX_HTML_BYTES) continue;
+      const json = JSON.parse(buf.toString("utf8")) as unknown;
+      const draft = articleFromUnknown(json, pageUrl);
+      if (!draft || draft.content.replace(/<[^>]+>/g, "").trim().length < 80) continue;
+      return { ...draft, sourceUrl: pageUrl };
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
 }
 
 function readabilityExtract(html: string, url: string): Extracted | null {
