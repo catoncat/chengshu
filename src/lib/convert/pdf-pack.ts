@@ -1,26 +1,12 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import PDFDocument from "pdfkit";
 import { parseHTML } from "linkedom";
+import { BOOK_FONT } from "./book-font.ts";
 
 export type PdfImage = {
   href: string;
   mediaType: string;
   data: Uint8Array;
 };
-
-function loadFont(): Buffer {
-  const url = new URL("./fonts/book-regular.otf", import.meta.url);
-  try {
-    return readFileSync(url);
-  } catch {
-    const here = dirname(fileURLToPath(import.meta.url));
-    return readFileSync(join(here, "fonts/book-regular.otf"));
-  }
-}
-
-const FONT = loadFont();
 
 type Block = { kind: string; text: string; src?: string };
 
@@ -103,11 +89,11 @@ export async function buildPdf(input: {
     doc.on("error", reject);
   });
 
-  doc.font(FONT);
+  doc.font(BOOK_FONT);
   const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
   doc.on("pageAdded", () => {
-    doc.font(FONT);
+    doc.font(BOOK_FONT);
   });
 
   doc.fontSize(16).fillColor("#171412").text(title, { width: pageWidth, lineGap: 4 });
@@ -189,7 +175,7 @@ export async function buildPdf(input: {
   const { count } = doc.bufferedPageRange();
   for (let i = 0; i < count; i++) {
     doc.switchToPage(i);
-    doc.font(FONT).fontSize(8).fillColor("#8a857c");
+    doc.font(BOOK_FONT).fontSize(8).fillColor("#8a857c");
     doc.text(String(i + 1), 0, doc.page.height - 32, {
       width: doc.page.width,
       align: "center",

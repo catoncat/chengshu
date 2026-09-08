@@ -4,7 +4,6 @@ import { marked } from "marked";
 import { assertPublicHttpUrl, isPublicHttpUrl } from "./ssrf";
 import { sanitizeFilename, bookTitle } from "@/lib/utils";
 import { buildEpub } from "./epub-pack";
-import { buildPdf } from "./pdf-pack";
 import { articleFromUnknown, isThinHtml, jsonCandidateUrls } from "./json-article";
 import { Defuddle } from "defuddle/node";
 
@@ -144,6 +143,7 @@ export async function convertToFile(
     const images = await embedImages(extracted.content, extracted.sourceUrl);
     let html = extracted.content;
     for (const [src, img] of images.rewritten) html = html.split(src).join(img.href);
+    const { buildPdf } = await import("./pdf-pack");
     const pdf = await buildPdf({
       title: extracted.title,
       byline: extracted.byline,
