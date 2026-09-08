@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { PDFDocument } from "pdf-lib";
 import { buildPdf } from "./pdf-pack.ts";
 
 test("PDF is a real PDF with a title, never body", async () => {
@@ -15,9 +16,9 @@ test("PDF is a real PDF with a title, never body", async () => {
   const buf = Buffer.from(bytes);
   assert.equal(buf.subarray(0, 5).toString(), "%PDF-");
   assert.ok(buf.length > 2000);
-  const latin = buf.toString("latin1");
-  assert.match(latin, /\/Title/);
-  assert.doesNotMatch(latin, /\/Title\s*\(\s*body\s*\)/i);
+  const doc = await PDFDocument.load(bytes);
+  assert.equal(doc.getTitle(), "成书");
+  assert.notEqual((doc.getTitle() || "").toLowerCase(), "body");
 });
 
 test("PDF falls back when title is the HTML tag body", async () => {
@@ -30,6 +31,6 @@ test("PDF falls back when title is the HTML tag body", async () => {
     html: "<p>hello</p>",
     images: [],
   });
-  const latin = Buffer.from(bytes).toString("latin1");
-  assert.doesNotMatch(latin, /\/Title\s*\(\s*body\s*\)/i);
+  const doc = await PDFDocument.load(bytes);
+  assert.equal(doc.getTitle(), "成书");
 });

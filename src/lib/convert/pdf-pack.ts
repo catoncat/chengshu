@@ -1,4 +1,5 @@
-import PDFDocument from "pdfkit";
+import fontkit from "@pdf-lib/fontkit";
+import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { parseHTML } from "linkedom";
 import { BOOK_FONT } from "./book-font.ts";
 
@@ -10,6 +11,12 @@ export type PdfImage = {
 
 type Block = { kind: string; text: string; src?: string };
 
+const PAGE = { width: 419.53, height: 595.28 };
+const MARGIN = { top: 50, bottom: 48, left: 44, right: 44 };
+const INK = rgb(23 / 255, 20 / 255, 18 / 255);
+const MUTED = rgb(107 / 255, 100 / 255, 92 / 255);
+const RULE = rgb(200 / 255, 193 / 255, 180 / 255);
+
 function textOf(el: { textContent?: string | null }) {
   return (el.textContent || "").replace(/\s+/g, " ").trim();
 }
@@ -18,7 +25,13 @@ function blocksFromHtml(html: string): Block[] {
   const { document } = parseHTML(`<body>${html}</body>`);
   const out: Block[] = [];
 
-  function visit(node: { nodeType: number; nodeName: string; textContent?: string | null; getAttribute?: (n: string) => string | null; childNodes: ArrayLike<unknown> }) {
+  function visit(node: {
+    nodeType: number;
+    nodeName: string;
+    textContent?: string | null;
+    getAttribute?: (n: string) => string | null;
+    childNodes: ArrayLike<unknown>;
+  }) {
     if (node.nodeType === 3) return;
     const tag = (node.nodeName || "").toLowerCase();
     if (tag === "img") {
@@ -41,9 +54,7 @@ function blocksFromHtml(html: string): Block[] {
       out.push({ kind: "hr", text: "" });
       return;
     }
-    for (const child of Array.from(node.childNodes)) {
-      visit(child as typeof node);
-    }
+    for (const child of Array.from(node.childNodes)) visit(child as typeof node);
   }
 
   visit(document.body as unknown as Parameters<typeof visit>[0]);
@@ -60,6 +71,29 @@ function usableTitle(value: string, fallback: string) {
   return t;
 }
 
+function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const lines: string[] = [];
+  for (const para of text.split("\n")) {
+    if (!para) {
+      lines.push("");
+      continue;
+    }
+    const tokens = para.split(/(\s+)|(?=[\u3400-\u9fff])/).filter((t) => t);
+    let line = "";
+    for (const tok of tokens) {
+      const next = line + tok;
+      if (line && font.widthOfTextAtSize(next, size) > maxWidth) {
+        lines.push(line.replace(/\s+$/g, ""));
+        line = tok.replace(/^\s+/g, "");
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+  }
+  return lines;
+}
+
 export async function buildPdf(input: {
   title: string;
   byline: string;
@@ -71,76 +105,94 @@ export async function buildPdf(input: {
 }): Promise<Uint8Array> {
   const fallback = usableTitle(input.siteName, "") || "未命名";
   const title = usableTitle(input.title, fallback);
-  const doc = new PDFDocument({
-    size: "A5",
-    bufferPages: true,
-    margins: { top: 50, bottom: 48, left: 44, right: 44 },
-    info: {
-      Title: title,
-      Author: input.byline || "",
-      Subject: input.excerpt || input.sourceUrl || "",
-      Creator: "成书",
-    },
-  });
-  const chunks: Buffer[] = [];
-  doc.on("data", (c: Buffer) => chunks.push(c));
-  const done = new Promise<Uint8Array>((resolve, reject) => {
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-  });
+  const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const font = await pdf.embedFont(BOOK_FONT, { subset: true });
+  pdf.setTitle(title);
+  pdf.setAuthor(input.byline || "");
+  pdf.setSubject(input.excerpt || input.sourceUrl || "");
+  pdf.setCreator("成书");
+  pdf.setProducer("成书");
 
-  doc.font(BOOK_FONT);
-  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const contentWidth = PAGE.width - MARGIN.left - MARGIN.right;
+  let page = pdf.addPage([PAGE.width, PAGE.height]);
+  let y = PAGE.height - MARGIN.top;
 
-  doc.on("pageAdded", () => {
-    doc.font(BOOK_FONT);
-  });
+  const newPage = () => {
+    page = pdf.addPage([PAGE.width, PAGE.height]);
+    y = PAGE.height - MARGIN.top;
+  };
 
-  doc.fontSize(16).fillColor("#171412").text(title, { width: pageWidth, lineGap: 4 });
+  const ensure = (need: number) => {
+    if (y - need < MARGIN.bottom) newPage();
+  };
+
+  const drawLines = (
+    lines: string[],
+    size: number,
+    color = INK,
+    indent = 0,
+    lineGap = 3.5,
+    paraGap = 8,
+  ) => {
+    const height = size * 1.35;
+    for (const line of lines) {
+      ensure(height + lineGap);
+      page.drawText(line || " ", {
+        x: MARGIN.left + indent,
+        y: y - size,
+        size,
+        font,
+        color,
+        maxWidth: contentWidth - indent + 1,
+      });
+      y -= height + lineGap;
+    }
+    y -= paraGap - lineGap;
+  };
+
+  drawLines(wrap(title, font, 16, contentWidth), 16, INK, 0, 4, 6);
   const meta = [input.byline, input.siteName].filter(Boolean).join(" · ");
-  if (meta) {
-    doc.moveDown(0.35);
-    doc.fontSize(9).fillColor("#6b645c").text(meta, { width: pageWidth });
-  }
+  if (meta) drawLines(wrap(meta, font, 9, contentWidth), 9, MUTED, 0, 2, 4);
   if (input.sourceUrl) {
-    doc.moveDown(0.15);
-    doc.fontSize(8).fillColor("#8a3b12").text(input.sourceUrl, {
-      width: pageWidth,
-      link: input.sourceUrl,
-    });
+    drawLines(wrap(input.sourceUrl, font, 8, contentWidth), 8, rgb(138 / 255, 59 / 255, 18 / 255), 0, 2, 12);
   }
-  doc.moveDown(0.8);
-  doc.fillColor("#171412");
 
   const images = new Map(input.images.map((img) => [img.href, img]));
 
   for (const block of blocksFromHtml(input.html)) {
     if (block.kind === "hr") {
-      doc.moveDown(0.3);
-      const y = doc.y;
-      doc
-        .moveTo(doc.page.margins.left, y)
-        .lineTo(doc.page.margins.left + pageWidth, y)
-        .strokeColor("#c8c1b4")
-        .lineWidth(0.6)
-        .stroke();
-      doc.strokeColor("#000").moveDown(0.5);
+      ensure(12);
+      y -= 6;
+      page.drawLine({
+        start: { x: MARGIN.left, y },
+        end: { x: MARGIN.left + contentWidth, y },
+        thickness: 0.6,
+        color: RULE,
+      });
+      y -= 10;
       continue;
     }
     if (block.kind === "img") {
       const hit =
         images.get(block.src || "") ||
         [...images.values()].find((img) => (block.src || "").endsWith(img.href));
-      const ok =
-        hit &&
-        (hit.mediaType.includes("jpeg") ||
-          hit.mediaType.includes("jpg") ||
-          hit.mediaType.includes("png"));
-      if (ok && hit) {
+      if (hit) {
         try {
-          if (doc.y + 80 > doc.page.height - doc.page.margins.bottom) doc.addPage();
-          doc.image(Buffer.from(hit.data), { fit: [pageWidth, 280], align: "center" });
-          doc.moveDown(0.6);
+          const jpg = hit.mediaType.includes("jpeg") || hit.mediaType.includes("jpg");
+          const png = hit.mediaType.includes("png");
+          if (!jpg && !png) continue;
+          const embedded = jpg ? await pdf.embedJpg(hit.data) : await pdf.embedPng(hit.data);
+          const dims = embedded.scaleToFit(contentWidth, 280);
+          ensure(dims.height + 16);
+          y -= dims.height;
+          page.drawImage(embedded, {
+            x: MARGIN.left + (contentWidth - dims.width) / 2,
+            y,
+            width: dims.width,
+            height: dims.height,
+          });
+          y -= 12;
         } catch {
           /* skip broken image */
         }
@@ -152,37 +204,32 @@ export async function buildPdf(input: {
     const pre = block.kind === "pre";
     const quote = block.kind === "blockquote";
     const li = block.kind === "li";
-    const size = heading
-      ? block.kind === "h1"
-        ? 14
-        : block.kind === "h2"
-          ? 12.5
-          : 11.5
-      : pre
-        ? 9
-        : 10.5;
-    if (heading) doc.moveDown(0.55);
-    doc.fontSize(size);
-    doc.fillColor(quote ? "#4a453f" : "#171412").text((li ? "• " : "") + block.text, {
-      width: pageWidth - (quote ? 16 : 0),
-      indent: !heading && !pre && !quote && !li ? 21 : 0,
-      lineGap: heading ? 2 : 3.5,
-      paragraphGap: 8,
-      align: "left",
-    });
+    const size = heading ? (block.kind === "h1" ? 14 : block.kind === "h2" ? 12.5 : 11.5) : pre ? 9 : 10.5;
+    if (heading) y -= 8;
+    const indent = !heading && !pre && !quote && !li ? 21 : 0;
+    const prefix = li ? "• " : "";
+    drawLines(
+      wrap(prefix + block.text, font, size, contentWidth - indent - (quote ? 16 : 0)),
+      size,
+      quote ? rgb(74 / 255, 69 / 255, 63 / 255) : INK,
+      indent + (quote ? 12 : 0),
+      heading ? 2 : 3.5,
+      8,
+    );
   }
 
-  const { count } = doc.bufferedPageRange();
-  for (let i = 0; i < count; i++) {
-    doc.switchToPage(i);
-    doc.font(BOOK_FONT).fontSize(8).fillColor("#8a857c");
-    doc.text(String(i + 1), 0, doc.page.height - 32, {
-      width: doc.page.width,
-      align: "center",
-      lineBreak: false,
+  const pages = pdf.getPages();
+  pages.forEach((p: PDFPage, i) => {
+    const label = String(i + 1);
+    const w = font.widthOfTextAtSize(label, 8);
+    p.drawText(label, {
+      x: (PAGE.width - w) / 2,
+      y: 22,
+      size: 8,
+      font,
+      color: MUTED,
     });
-  }
+  });
 
-  doc.end();
-  return done;
+  return pdf.save();
 }
