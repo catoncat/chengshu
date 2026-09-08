@@ -1,9 +1,9 @@
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
-import JSZip from "jszip";
 import { marked } from "marked";
 import { assertPublicHttpUrl, isPublicHttpUrl } from "./ssrf";
 import { sanitizeFilename } from "@/lib/utils";
+import { buildEpub } from "./epub-pack";
 
 const UA =
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36";
@@ -192,11 +192,14 @@ function extractFromText(text: string, title?: string): Extracted {
 async function fetchHtml(url: string): Promise<string> {
   const res = await fetch(url, {
     redirect: "follow",
+    cache: "no-store",
     signal: AbortSignal.timeout(16000),
     headers: {
       "User-Agent": UA,
       Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.6",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
     },
   });
   if (!res.ok) throw new Error(`抓取失败（${res.status}）`);
@@ -591,127 +594,4 @@ function escapeXml(value: string): string {
     .replaceAll("\u003c", "\u0026lt;")
     .replaceAll("\u003e", "\u0026gt;")
     .replaceAll("\u0022", "\u0026quot;");
-}
-
-async function buildEpub(input: {
-  title: string;
-  byline: string;
-  siteName: string;
-  excerpt: string;
-  sourceUrl: string;
-  xhtml: string;
-  images: EmbeddedImage[];
-}): Promise<Uint8Array> {
-  const zip = new JSZip();
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-  const lang = /[\u4e00-\u9fff]/.test(input.title + input.xhtml) ? "zh" : "en";
-  const cover = input.images[0];
-
-  zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
-  zip.file(
-    "META-INF/container.xml",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>`,
-  );
-
-  const manifestItems = [
-    `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
-    `<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>`,
-    `<item id="css" href="style.css" media-type="text/css"/>`,
-    ...input.images.map(
-      (img) =>
-        `<item id="${img.id}" href="${img.href}" media-type="${img.mediaType}"${
-          cover && img.id === cover.id ? ' properties="cover-image"' : ""
-        }/>`,
-    ),
-  ];
-
-  zip.file(
-    "OEBPS/content.opf",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0" xml:lang="${lang}">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="bookid">urn:uuid:${id}</dc:identifier>
-    <dc:title>${escapeXml(input.title)}</dc:title>
-    <dc:language>${lang}</dc:language>
-    ${input.byline ? `<dc:creator>${escapeXml(input.byline)}</dc:creator>` : ""}
-    ${input.siteName ? `<dc:publisher>${escapeXml(input.siteName)}</dc:publisher>` : ""}
-    ${input.sourceUrl ? `<dc:source>${escapeXml(input.sourceUrl)}</dc:source>` : ""}
-    ${input.excerpt ? `<dc:description>${escapeXml(input.excerpt)}</dc:description>` : ""}
-    <meta property="dcterms:modified">${now}</meta>
-  </metadata>
-  <manifest>
-    ${manifestItems.join("\n    ")}
-  </manifest>
-  <spine>
-    <itemref idref="chapter"/>
-  </spine>
-</package>`,
-  );
-
-  zip.file(
-    "OEBPS/nav.xhtml",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${lang}">
-  <head><title>${escapeXml(input.title)}</title></head>
-  <body>
-    <nav epub:type="toc">
-      <ol><li><a href="chapter.xhtml">${escapeXml(input.title)}</a></li></ol>
-    </nav>
-  </body>
-</html>`,
-  );
-
-  const metaBits = [
-    input.byline,
-    input.siteName,
-    input.sourceUrl ? `<a href="${escapeXml(input.sourceUrl)}">${escapeXml(hostName(input.sourceUrl) || input.sourceUrl)}</a>` : "",
-  ].filter(Boolean);
-
-  zip.file(
-    "OEBPS/chapter.xhtml",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
-  <head>
-    <title>${escapeXml(input.title)}</title>
-    <link rel="stylesheet" href="style.css" type="text/css"/>
-  </head>
-  <body>
-    <h1>${escapeXml(input.title)}</h1>
-    ${metaBits.length ? `<p class="meta">${metaBits.join(" · ")}</p>` : ""}
-    ${input.xhtml}
-  </body>
-</html>`,
-  );
-
-  zip.file(
-    "OEBPS/style.css",
-    `body{font-family:"Songti SC","Noto Serif CJK SC","Source Han Serif SC",Georgia,serif;line-height:1.75;font-size:1em;margin:0;padding:0}
-h1{font-size:1.55em;line-height:1.3;margin:0 0 .8em;text-indent:0}
-h2,h3{line-height:1.35;margin:1.2em 0 .5em;text-indent:0}
-p{margin:.75em 0;text-indent:2em}
-p.meta{text-indent:0;font-size:.9em;opacity:.72}
-img{max-width:100%;height:auto;display:block;margin:1em auto}
-blockquote{margin:1em 0;padding-left:1em;border-left:3px solid #c8c1b4;opacity:.92}
-a{color:inherit}
-pre,code{font-family:ui-monospace,monospace;font-size:.92em}
-ul,ol{padding-left:1.4em}
-li{margin:.25em 0}`,
-  );
-
-  for (const img of input.images) {
-    zip.file(`OEBPS/${img.href}`, img.data);
-  }
-
-  const out = await zip.generateAsync({
-    type: "uint8array",
-    compression: "DEFLATE",
-    compressionOptions: { level: 6 },
-  });
-  return out;
 }
