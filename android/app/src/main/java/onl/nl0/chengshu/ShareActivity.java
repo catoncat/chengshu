@@ -75,6 +75,10 @@ public class ShareActivity extends Activity {
     findViewById(R.id.rowDest).setOnClickListener(v -> pickDest());
     findViewById(R.id.rowHidden).setOnClickListener(v -> pickHidden());
     findViewById(R.id.rowUpdate).setOnClickListener(v -> onUpdateTap());
+    if (savedInstanceState != null || fromRecents(getIntent())) {
+      showHome();
+      return;
+    }
     String pageUrl = extractUrl(getIntent());
     if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(getIntent()), currentFormat(), true, false);
     else showHome();
@@ -84,6 +88,10 @@ public class ShareActivity extends Activity {
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
     setIntent(intent);
+    if (fromRecents(intent)) {
+      showHome();
+      return;
+    }
     String pageUrl = extractUrl(intent);
     if (pageUrl != null) convertAndOpen(pageUrl, extractTitle(intent), currentFormat(), true, false);
     else showHome();
@@ -275,7 +283,7 @@ public class ShareActivity extends Activity {
       grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
       try {
         startActivity(view);
-        if (finishAfter) finish(); else showHome();
+        if (finishAfter) dropShareTask(); else showHome();
         return;
       } catch (ActivityNotFoundException ignored) {
         prefs.edit().putString(destKey(format), ASK).apply();
@@ -283,7 +291,7 @@ public class ShareActivity extends Activity {
     }
     try {
       startActivity(Intent.createChooser(viewIntent(uri, format.mime), "打开"));
-      if (finishAfter) finish(); else showHome();
+      if (finishAfter) dropShareTask(); else showHome();
     } catch (ActivityNotFoundException e) {
       converting.setVisibility(View.VISIBLE);
       home.setVisibility(View.GONE);
@@ -428,6 +436,18 @@ public class ShareActivity extends Activity {
         runOnUiThread(() -> updateValue.setText("下载失败"));
       }
     }, "chengshu-apk").start();
+  }
+
+  private static boolean fromRecents(Intent intent) {
+    return intent != null && (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0;
+  }
+
+  private void dropShareTask() {
+    Intent clean = new Intent(this, ShareActivity.class);
+    clean.setAction(Intent.ACTION_MAIN);
+    clean.addCategory(Intent.CATEGORY_LAUNCHER);
+    setIntent(clean);
+    finishAndRemoveTask();
   }
 
   private int dp(int value) {
