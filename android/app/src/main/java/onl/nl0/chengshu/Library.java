@@ -37,7 +37,22 @@ final class Library {
   }
 
   synchronized File file(Item item, Format format) {
-    return new File(itemDir(item.id), "body" + format.ext);
+    File dir = itemDir(item.id);
+    File named = new File(dir, fileStem(item.title) + format.ext);
+    if (named.isFile()) return named;
+    File[] matches = dir.listFiles((d, n) -> n != null && n.endsWith(format.ext));
+    if (matches != null) {
+      for (File f : matches) {
+        if (f.getName().equals("body" + format.ext)) {
+          if (!named.getName().equals(f.getName()) && f.renameTo(named) && named.isFile()) {
+            return named;
+          }
+          return f;
+        }
+      }
+      if (matches.length == 1) return matches[0];
+    }
+    return named;
   }
 
   synchronized boolean has(Item item, Format format) {
@@ -49,10 +64,6 @@ final class Library {
     String id = idFor(normalized);
     File dir = itemDir(id);
     if (!dir.exists()) dir.mkdirs();
-    File out = new File(dir, "body" + format.ext);
-    try (FileOutputStream fos = new FileOutputStream(out)) {
-      fos.write(body);
-    }
     List<Item> items = readIndex();
     Item found = null;
     for (Iterator<Item> it = items.iterator(); it.hasNext(); ) {
@@ -72,6 +83,18 @@ final class Library {
     }
     if (title != null && !title.trim().isEmpty()) found.title = title.trim();
     if (found.title == null || found.title.isEmpty()) found.title = found.host;
+    File out = new File(dir, fileStem(found.title) + format.ext);
+    File[] old = dir.listFiles();
+    if (old != null) {
+      for (File f : old) {
+        if (f.getName().endsWith(format.ext) && !f.getName().equals(out.getName())) {
+          f.delete();
+        }
+      }
+    }
+    try (FileOutputStream fos = new FileOutputStream(out)) {
+      fos.write(body);
+    }
     if (!found.formats.contains(format.id)) found.formats.add(format.id);
     found.lastFormat = format.id;
     found.updated = System.currentTimeMillis();
@@ -227,6 +250,20 @@ final class Library {
     } catch (Exception e) {
       return url;
     }
+  }
+
+  static String fileStem(String title) {
+    if (title == null) title = "";
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < title.length(); i++) {
+      char c = title.charAt(i);
+      if (c <= 31 || "/\\:*?\"<>|".indexOf(c) >= 0) continue;
+      sb.append(c);
+    }
+    String s = sb.toString().replaceAll(" +", " ").trim();
+    if (s.isEmpty() || ".".equals(s) || "..".equals(s) || "body".equalsIgnoreCase(s)) s = "book";
+    if (s.length() > 80) s = s.substring(0, 80).trim();
+    return s;
   }
 
   private static void deleteDir(File dir) {
