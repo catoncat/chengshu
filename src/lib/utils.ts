@@ -62,11 +62,18 @@ export function formatRelative(ts: number): string {
   return `${day} 天前`;
 }
 
+export function bookTitle(title: string | null | undefined, fallback = "未命名"): string {
+  const t = (title ?? "").replace(/\s+/g, " ").trim();
+  if (!t || /^body$/i.test(t)) return fallback;
+  return t;
+}
+
 export function sanitizeFilename(title: string): string {
   const cleaned = title
     .replace(/[\\/:*?"<>|]/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 72);
-  return cleaned || "article";
+  if (!cleaned || /^body$/i.test(cleaned)) return "article";
+  return cleaned;
 }

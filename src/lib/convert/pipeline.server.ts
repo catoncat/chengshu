@@ -2,7 +2,7 @@ import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import { marked } from "marked";
 import { assertPublicHttpUrl, isPublicHttpUrl } from "./ssrf";
-import { sanitizeFilename } from "@/lib/utils";
+import { sanitizeFilename, bookTitle } from "@/lib/utils";
 import { buildEpub } from "./epub-pack";
 
 const UA =
@@ -178,7 +178,7 @@ function extractFromText(text: string, title?: string): Extracted {
     .filter(Boolean)
     .map((p) => `<p>${escapeXml(p).replaceAll("\n", "<br />")}</p>`)
     .join("");
-  const heading = title?.trim() || text.slice(0, 32) || "摘录";
+  const heading = bookTitle(title, text.slice(0, 32) || "摘录");
   return {
     title: heading,
     byline: "",
@@ -237,9 +237,9 @@ function readabilityExtract(html: string, url: string): Extracted | null {
       nbTopCandidates: 8,
     }).parse();
     if (!parsed?.content) return null;
-    const title = (parsed.title || document.title || hostName(url)).trim();
+    const title = bookTitle(parsed.title || document.title, hostName(url) || "未命名");
     return {
-      title: title || "未命名",
+      title,
       byline: (parsed.byline ?? "").trim(),
       siteName: (parsed.siteName ?? hostName(url)).trim(),
       excerpt: (parsed.excerpt ?? "").trim().slice(0, 220),
@@ -265,7 +265,7 @@ async function jinaExtract(url: string): Promise<Extracted | null> {
     const markdown = (await res.text()).trim();
     if (markdown.length < 80) return null;
     const titleMatch = markdown.match(/^#\s+(.+)$/m);
-    const title = titleMatch?.[1]?.trim() || hostName(url);
+    const title = bookTitle(titleMatch?.[1], hostName(url) || "未命名");
     const html = await marked.parse(markdown, { gfm: true, breaks: true });
     return {
       title,

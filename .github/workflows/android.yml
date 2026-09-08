@@ -20,7 +20,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - run: gradle -p android assembleDebug
+      - run: gradle -p android testDebugUnitTest assembleDebug
       - name: publish apk
         run: |
           mkdir -p public
@@ -41,6 +41,7 @@ jobs:
           git add public/chengshu.apk public/app.json
           git diff --staged --quiet && echo "apk unchanged" && exit 0
           git commit -m "android: 发布 APK"
+          git pull --rebase origin HEAD || git pull --rebase origin main
           git push
       - uses: actions/upload-artifact@v4
         with:

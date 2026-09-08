@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import JSZip from "jszip";
 
-const BASE = process.argv[2] || "https://0nl.onl";
-const SAMPLE = "https://zh.wikipedia.org/wiki/EPUB";
+const BASE = process.argv[2] || "http://127.0.0.1:8080";
+const SAMPLE = process.argv[3] || "https://0nl.onl/";
 
 async function main() {
   const errors = [];
@@ -11,43 +11,37 @@ async function main() {
     if (!ok) errors.push(msg);
   };
 
-  const convertRes = await fetch(`${BASE}/api/convert`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url: SAMPLE }),
-  });
-  const convert = await convertRes.json();
-  log(convertRes.ok, `POST /api/convert → ${convertRes.status}`);
-  log(typeof convert.title === "string" && convert.title.length > 0, `title: ${convert.title ?? "?"}`);
-  log(typeof convert.epubBase64 === "string" && convert.epubBase64.length > 100, "epubBase64 present");
-  log(typeof convert.html === "string" && convert.html.includes("<html"), "html document present");
-  log(!String(convert.html || "").includes("/book.epub"), "html is not a book.epub link");
+  const exportUrl = `${BASE}/export?format=epub&url=${encodeURIComponent(SAMPLE)}`;
+  const res = await fetch(exportUrl, { headers: { "cache-control": "no-cache" } });
+  const buf = Buffer.from(await res.arrayBuffer());
+  log(res.ok, `GET /export → ${res.status}`);
+  log((res.headers.get("content-type") || "").includes("application/epub+zip"), "content-type epub");
+  const xtitle = decodeURIComponent(res.headers.get("x-title") || "");
+  log(Boolean(xtitle) && xtitle.toLowerCase() !== "body", `X-Title=${xtitle || "?"}`);
+  const cd = res.headers.get("content-disposition") || "";
+  log(!/filename\*?=(?:UTF-8'')?"?body\b/i.test(cd), `content-disposition not body`);
+  log(buf.subarray(0, 2).toString() === "PK", "epub is a zip");
 
-  const bytes = Buffer.from(convert.epubBase64 ?? "", "base64");
-  log(bytes.subarray(0, 2).toString() === "PK", "epub is a zip");
-  const zip = await JSZip.loadAsync(bytes);
-  log(Boolean(zip.file("mimetype")), "mimetype entry");
-  const mime = await zip.file("mimetype")?.async("string");
-  log(mime === "application/epub+zip", `mimetype=${mime}`);
-  log(Boolean(zip.file("META-INF/container.xml")), "container.xml");
-  const opf = Object.keys(zip.files).find((n) => n.endsWith(".opf"));
-  log(Boolean(opf), `opf ${opf ?? "missing"}`);
-
-  const bookUrl = `${BASE}/book.epub?url=${encodeURIComponent(SAMPLE)}`;
-  const epubRes = await fetch(bookUrl);
-  const epubBuf = Buffer.from(await epubRes.arrayBuffer());
-  log(epubRes.ok, `GET /book.epub → ${epubRes.status}`);
-  log((epubRes.headers.get("content-type") || "").includes("application/epub+zip"), "content-type epub");
-  log(epubBuf.subarray(0, 2).toString() === "PK", "GET /book.epub is zip");
-
-  const home = await fetch(`${BASE}/`);
-  const html = await home.text();
-  const asset = html.match(/\/assets\/routes-[^"']+/);
-  log(Boolean(asset), "routes asset");
-  if (asset) {
-    const js = await (await fetch(`${BASE}${asset[0]}`)).text();
-    log(!js.includes("navigator.share({title:") && !/share\(\{[^}]*url:\s*[a-zA-Z.]*viewUrl/.test(js), "client does not share book.epub URL");
-    log(js.includes("application/epub+zip") || js.includes("text/html"), "client shares a file");
+  const zip = await JSZip.loadAsync(buf);
+  log(Boolean(zip.file("OEBPS/toc.ncx")), "toc.ncx (WeChat Reading needs NCX)");
+  log(!zip.file("OEBPS/nav.xhtml"), "no EPUB3 nav.xhtml in spine path");
+  const opfName = Object.keys(zip.files).find((n) => n.endsWith(".opf"));
+  log(Boolean(opfName), `opf ${opfName ?? "missing"}`);
+  if (opfName) {
+    const opf = await zip.file(opfName).async("string");
+    log(opf.includes('version="2.0"'), "EPUB 2.0 package");
+    const title = (opf.match(/<dc:title>([^<]*)<\/dc:title>/) || [])[1] || "";
+    log(Boolean(title) && title.toLowerCase() !== "body", `dc:title=${title || "?"}`);
+  }
+  if (zip.file("OEBPS/toc.ncx")) {
+    const ncx = await zip.file("OEBPS/toc.ncx").async("string");
+    log(!/<text>\s*body\s*<\/text>/i.test(ncx), "ncx labels are not body");
+    log(/<text>[^<]+<\/text>/.test(ncx), "ncx has a text label");
+  }
+  if (zip.file("OEBPS/chapter.xhtml")) {
+    const chapter = await zip.file("OEBPS/chapter.xhtml").async("string");
+    log(/<h1>[^<]+<\/h1>/.test(chapter), "chapter has h1 title");
+    log(!/<body>\s*<p/.test(chapter) || /<body title="/.test(chapter), "body carries a title");
   }
 
   if (errors.length) {

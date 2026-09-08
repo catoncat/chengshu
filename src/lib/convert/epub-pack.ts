@@ -23,7 +23,13 @@ function hostName(url: string) {
   }
 }
 
-/** EPUB 2 + NCX. WeChat Reading ignores EPUB 3 nav and names the chapter body. */
+function usableTitle(value: string, fallback: string) {
+  const t = (value || "").replace(/\s+/g, " ").trim();
+  if (!t || /^body$/i.test(t)) return fallback;
+  return t;
+}
+
+/** EPUB 2 + NCX. 微信读书 ignores EPUB 3 nav and names the chapter "body". */
 export async function buildEpub(input: {
   title: string;
   byline: string;
@@ -37,7 +43,9 @@ export async function buildEpub(input: {
   const id = crypto.randomUUID();
   const lang = /[\u4e00-\u9fff]/.test(input.title + input.xhtml) ? "zh" : "en";
   const cover = input.images[0];
-  const title = escapeXml(input.title);
+  const fallback =
+    usableTitle(input.siteName, "") || hostName(input.sourceUrl) || "未命名";
+  const title = escapeXml(usableTitle(input.title, fallback));
 
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
   zip.file(
@@ -55,10 +63,7 @@ export async function buildEpub(input: {
     `<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>`,
     `<item id="css" href="style.css" media-type="text/css"/>`,
     ...input.images.map(
-      (img) =>
-        `<item id="${img.id}" href="${img.href}" media-type="${img.mediaType}"${
-          cover && img.id === cover.id ? ' properties="cover-image"' : ""
-        }/>`,
+      (img) => `<item id="${img.id}" href="${img.href}" media-type="${img.mediaType}"/>`,
     ),
   ];
 

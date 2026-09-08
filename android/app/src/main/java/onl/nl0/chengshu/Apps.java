@@ -22,9 +22,11 @@ final class Apps {
     "io.legado.app.release",
     "io.legado.app",
     "org.coolreader",
+    "org.readera",
     "com.flyersoft.moonreaderp",
     "com.flyersoft.moonreader",
-    "org.readera",
+    "com.tencent.weread",
+    "com.tencent.weread.online",
     "info.plateaukao.einkbro",
     "md.obsidian",
     "net.gsantner.markor"
@@ -98,9 +100,9 @@ final class Apps {
       Set<String> hiddenFilter) {
     PackageManager pm = context.getPackageManager();
     LinkedHashMap<String, Entry> unique = new LinkedHashMap<>();
-    for (ResolveInfo info : query(pm, format.mime)) add(context, unique, info);
+    for (ResolveInfo info : query(pm, format.mime)) add(context, unique, info, format);
     for (String extra : format.extraMimes) {
-      for (ResolveInfo info : query(pm, extra)) add(context, unique, info);
+      for (ResolveInfo info : query(pm, extra)) add(context, unique, info, format);
     }
     List<Entry> pinned = new ArrayList<>();
     List<Entry> rest = new ArrayList<>();
@@ -124,7 +126,8 @@ final class Apps {
     return pm.queryIntentActivities(probe, PackageManager.MATCH_ALL);
   }
 
-  private static void add(Context context, LinkedHashMap<String, Entry> unique, ResolveInfo info) {
+  private static void add(
+      Context context, LinkedHashMap<String, Entry> unique, ResolveInfo info, Format format) {
     if (info.activityInfo == null) return;
     String pkg = info.activityInfo.packageName;
     if (unique.containsKey(pkg)) return;
