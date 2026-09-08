@@ -1,11 +1,16 @@
 package onl.nl0.chengshu;
 
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
-import android.content.Intent;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import androidx.core.content.FileProvider;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -40,7 +45,13 @@ final class Apps {
     "com.android.systemui",
     "com.google.android.packageinstaller",
     "com.google.android.apps.nbu.files",
-    "com.google.android.apps.docs"
+    "com.google.android.apps.docs",
+    "com.tencent.mobileqq",
+    "com.tencent.mm",
+    "com.tencent.wetype",
+    "com.netease.cloudmusic",
+    "com.termux",
+    "com.termux.app"
   };
 
   static final class Entry {
@@ -87,6 +98,26 @@ final class Apps {
     return list(context, format, Collections.emptySet(), true, userHidden(prefs));
   }
 
+  static Intent viewProbe(Uri data, String mime) {
+    Intent probe = new Intent(Intent.ACTION_VIEW);
+    probe.setDataAndType(data, mime);
+    probe.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    probe.addCategory(Intent.CATEGORY_DEFAULT);
+    return probe;
+  }
+
+  static ArrayList<ComponentName> excludeComponents(
+      Context context, Format format, SharedPreferences prefs) {
+    Set<String> skip = hidden(prefs);
+    ArrayList<ComponentName> out = new ArrayList<>();
+    for (ResolveInfo info : query(context, format)) {
+      if (info.activityInfo == null) continue;
+      if (!skip.contains(info.activityInfo.packageName)) continue;
+      out.add(new ComponentName(info.activityInfo.packageName, info.activityInfo.name));
+    }
+    return out;
+  }
+
   private static List<Entry> list(
       Context context, Format format, Set<String> skip, boolean onlyHidden) {
     return list(context, format, skip, onlyHidden, skip);
@@ -98,12 +129,8 @@ final class Apps {
       Set<String> skip,
       boolean onlyHidden,
       Set<String> hiddenFilter) {
-    PackageManager pm = context.getPackageManager();
     LinkedHashMap<String, Entry> unique = new LinkedHashMap<>();
-    for (ResolveInfo info : query(pm, format.mime)) add(context, unique, info, format);
-    for (String extra : format.extraMimes) {
-      for (ResolveInfo info : query(pm, extra)) add(context, unique, info, format);
-    }
+    for (ResolveInfo info : query(context, format)) add(context, unique, info);
     List<Entry> pinned = new ArrayList<>();
     List<Entry> rest = new ArrayList<>();
     for (Entry entry : unique.values()) {
@@ -119,15 +146,45 @@ final class Apps {
     return pinned;
   }
 
-  private static List<ResolveInfo> query(PackageManager pm, String mime) {
-    Intent probe = new Intent(Intent.ACTION_VIEW);
-    probe.setType(mime);
-    probe.addCategory(Intent.CATEGORY_DEFAULT);
-    return pm.queryIntentActivities(probe, PackageManager.MATCH_ALL);
+  private static List<ResolveInfo> query(Context context, Format format) {
+    PackageManager pm = context.getPackageManager();
+    LinkedHashMap<String, ResolveInfo> unique = new LinkedHashMap<>();
+    Uri data = probeUri(context, format);
+    String[] mimes = new String[1 + format.extraMimes.length];
+    mimes[0] = format.mime;
+    System.arraycopy(format.extraMimes, 0, mimes, 1, format.extraMimes.length);
+    for (String mime : mimes) {
+      remember(unique, pm.queryIntentActivities(viewProbe(data, mime), PackageManager.MATCH_ALL));
+      Intent typed = new Intent(Intent.ACTION_VIEW);
+      typed.setType(mime);
+      remember(unique, pm.queryIntentActivities(typed, PackageManager.MATCH_ALL));
+    }
+    return new ArrayList<>(unique.values());
   }
 
-  private static void add(
-      Context context, LinkedHashMap<String, Entry> unique, ResolveInfo info, Format format) {
+  private static void remember(LinkedHashMap<String, ResolveInfo> unique, List<ResolveInfo> infos) {
+    for (ResolveInfo info : infos) {
+      if (info.activityInfo == null) continue;
+      String key = info.activityInfo.packageName + "/" + info.activityInfo.name;
+      if (!unique.containsKey(key)) unique.put(key, info);
+    }
+  }
+
+  static Uri probeUri(Context context, Format format) {
+    File dir = new File(context.getCacheDir(), "probe");
+    if (!dir.isDirectory()) dir.mkdirs();
+    File file = new File(dir, "probe" + format.ext);
+    if (!file.exists()) {
+      try (FileOutputStream out = new FileOutputStream(file)) {
+        out.write(new byte[] {'P', 'K'});
+      } catch (Exception ignored) {
+        return Uri.parse("content://" + context.getPackageName() + ".files/probe" + format.ext);
+      }
+    }
+    return FileProvider.getUriForFile(context, context.getPackageName() + ".files", file);
+  }
+
+  private static void add(Context context, LinkedHashMap<String, Entry> unique, ResolveInfo info) {
     if (info.activityInfo == null) return;
     String pkg = info.activityInfo.packageName;
     if (unique.containsKey(pkg)) return;

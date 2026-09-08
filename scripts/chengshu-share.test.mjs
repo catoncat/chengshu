@@ -51,7 +51,21 @@ test("recents relaunch is ignored only via LAUNCHED_FROM_HISTORY", () => {
 test("share is one entry then a format picker, not four share targets", () => {
   assert.match(activity, /showShareConfirm\(pageUrl/);
   assert.match(activity, /startShareConvert/);
-  assert.match(flow, /static boolean autoConvertOnShare\(\) \{\s*return false;/);
+  assert.match(flow, /static boolean autoConvertOnShare\(boolean formatAsk\) \{\s*return !formatAsk;/);
   const aliases = (manifest.match(/activity-alias/g) || []).length;
   assert.equal(aliases, 0);
+});
+
+test("dest discovery probes a content FileProvider URI like the real open", () => {
+  const apps = fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/Apps.java", "utf8");
+  assert.match(apps, /FileProvider\.getUriForFile/);
+  assert.match(apps, /viewProbe/);
+  assert.match(apps, /FLAG_GRANT_READ_URI_PERMISSION/);
+  assert.match(apps, /org\.koreader\.launcher/);
+});
+
+test("format settings include ask-every-time", () => {
+  assert.match(activity, /labels\[0\] = "每次询问"/);
+  assert.match(activity, /formatIsAsk/);
+  assert.match(activity, /migrated_format_ask/);
 });

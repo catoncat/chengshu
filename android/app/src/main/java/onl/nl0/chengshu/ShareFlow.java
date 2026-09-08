@@ -16,8 +16,8 @@ final class ShareFlow {
     return (flags & FLAG_LAUNCHED_FROM_HISTORY) == 0;
   }
 
-  static boolean autoConvertOnShare() {
-    return false;
+  static boolean autoConvertOnShare(boolean formatAsk) {
+    return !formatAsk;
   }
 
   static boolean finishActivityAfterOpen(boolean openedChooser) {

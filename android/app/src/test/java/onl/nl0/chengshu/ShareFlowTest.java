@@ -11,7 +11,8 @@ public class ShareFlowTest {
   public void chromeShareOffersExportNotAutoConvert() {
     assertTrue(ShareFlow.shouldConvertShare(ShareFlow.ACTION_SEND, ShareFlow.FLAG_NEW_TASK));
     assertTrue(ShareFlow.shouldConvertShare(ShareFlow.ACTION_SEND, 0));
-    assertFalse(ShareFlow.autoConvertOnShare());
+    assertFalse(ShareFlow.autoConvertOnShare(true));
+    assertTrue(ShareFlow.autoConvertOnShare(false));
   }
 
   @Test

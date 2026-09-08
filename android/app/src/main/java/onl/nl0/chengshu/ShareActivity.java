@@ -2,6 +2,7 @@ package onl.nl0.chengshu;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ComponentName;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
@@ -106,7 +107,7 @@ public class ShareActivity extends Activity {
     }
     String pageUrl = urlOf(intent);
     if (pageUrl != null) {
-      if (ShareFlow.autoConvertOnShare()) {
+      if (ShareFlow.autoConvertOnShare(formatIsAsk())) {
         convertAndOpen(pageUrl, titleOf(intent), currentFormat(), true, false);
       } else {
         showShareConfirm(pageUrl, titleOf(intent));
@@ -120,9 +121,18 @@ public class ShareActivity extends Activity {
     if (!prefs.contains("dest.epub") && prefs.contains(KEY_READER)) {
       prefs.edit().putString("dest.epub", prefs.getString(KEY_READER, ASK)).apply();
     }
+    if (!prefs.getBoolean("migrated_format_ask", false)) {
+      prefs.edit().putBoolean("migrated_format_ask", true).putString(KEY_FORMAT, ASK).apply();
+    }
+  }
+
+  private boolean formatIsAsk() {
+    String id = prefs.getString(KEY_FORMAT, ASK);
+    return id == null || id.isEmpty();
   }
 
   private Format currentFormat() {
+    if (formatIsAsk()) return Format.EPUB;
     return Format.of(prefs.getString(KEY_FORMAT, Format.EPUB.id));
   }
 
@@ -211,14 +221,13 @@ public class ShareActivity extends Activity {
       showHome();
       return;
     }
-    prefs.edit().putString(KEY_FORMAT, format.id).apply();
     convertAndOpen(pendingUrl, pendingTitle, format, true, false);
   }
 
   private void refreshPrefs() {
-    Format format = currentFormat();
-    formatValue.setText(format.title);
-    String pkg = prefs.getString(destKey(format), ASK);
+    formatValue.setText(formatIsAsk() ? "每次询问" : currentFormat().title);
+    Format destFormat = currentFormat();
+    String pkg = prefs.getString(destKey(destFormat), ASK);
     destValue.setText(pkg == null || pkg.isEmpty() ? "每次询问" : labelOf(pkg));
     int hidden = Apps.userHidden(prefs).size();
     hiddenValue.setText(hidden == 0 ? "无" : hidden + " 个");
@@ -299,12 +308,12 @@ public class ShareActivity extends Activity {
   }
 
   private void pickFormat() {
-    Format current = currentFormat();
-    String[] labels = new String[Format.ALL.length];
+    String[] labels = new String[Format.ALL.length + 1];
+    labels[0] = "每次询问";
     int selected = 0;
     for (int i = 0; i < Format.ALL.length; i++) {
-      labels[i] = Format.ALL[i].title;
-      if (Format.ALL[i].id.equals(current.id)) selected = i;
+      labels[i + 1] = Format.ALL[i].title;
+      if (!formatIsAsk() && Format.ALL[i].id.equals(currentFormat().id)) selected = i + 1;
     }
     new AlertDialog.Builder(this)
         .setTitle("格式")
@@ -312,7 +321,11 @@ public class ShareActivity extends Activity {
             labels,
             selected,
             (d, which) -> {
-              prefs.edit().putString(KEY_FORMAT, Format.ALL[which].id).apply();
+              if (which == 0) {
+                prefs.edit().putString(KEY_FORMAT, ASK).apply();
+              } else {
+                prefs.edit().putString(KEY_FORMAT, Format.ALL[which - 1].id).apply();
+              }
               d.dismiss();
               refreshPrefs();
             })
@@ -477,6 +490,10 @@ public class ShareActivity extends Activity {
         Intent picker = Intent.createChooser(view, "打开");
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         picker.setClipData(ClipData.newRawUri(stem, uri));
+        ArrayList<ComponentName> exclude = Apps.excludeComponents(this, format, prefs);
+        if (!exclude.isEmpty()) {
+          picker.putParcelableArrayListExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, exclude);
+        }
         startActivity(picker);
       } catch (ActivityNotFoundException e) {
         converting.setVisibility(View.VISIBLE);
