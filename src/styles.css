@@ -38,7 +38,7 @@
   }
 
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not(.light) {
       color-scheme: dark;
       --color-background: #000000;
       --color-foreground: #ededed;
@@ -54,6 +54,38 @@
       --color-primary-foreground: #000000;
       --logo-divider: #666666;
     }
+  }
+
+  html.dark {
+    color-scheme: dark;
+    --color-background: #000000;
+    --color-foreground: #ededed;
+    --color-muted: #161616;
+    --color-muted-foreground: #a1a1a1;
+    --color-border: #262626;
+    --color-popover: #0a0a0a;
+    --color-popover-foreground: #ededed;
+    --color-ring: #666666;
+    --color-bg: #000000;
+    --color-fg: #ededed;
+    --color-primary: #ededed;
+    --color-primary-foreground: #000000;
+    --logo-divider: #666666;
+  }
+
+  html.light {
+    color-scheme: light;
+    --color-background: #ffffff;
+    --color-foreground: #171717;
+    --color-muted: #f2f2f2;
+    --color-muted-foreground: #525252;
+    --color-border: #e5e5e5;
+    --color-popover: #fafafa;
+    --color-popover-foreground: #171717;
+    --color-ring: #a3a3a3;
+    --color-bg: #ffffff;
+    --color-fg: #171717;
+    --logo-divider: #cccccc;
   }
 
   button:not(:disabled),
