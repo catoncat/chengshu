@@ -1,26 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SiteHeader } from "@/components/site-header";
 
 export const Route = createFileRoute("/")({
   component: Home,
+  head: () => ({
+    meta: [
+      { title: "成书" },
+      {
+        name: "description",
+        content: "在手机浏览器里看到想细读的长文，点系统分享，选成书。",
+      },
+    ],
+  }),
 });
 
 function Home() {
   return (
     <>
-      <header className="mx-auto flex h-16 max-w-[744px] items-center justify-between gap-5 px-5 min-[641px]:justify-start min-[641px]:gap-10 min-[641px]:px-8">
-        <a href="/" className="text-foreground no-underline hover:text-foreground">
-          成书
-        </a>
-        <nav className="flex items-center gap-7 text-[13px] text-muted-foreground min-[641px]:text-sm">
-          <a
-            href="https://github.com/catoncat/chengshu"
-            className="text-inherit no-underline hover:text-foreground"
-          >
-            源码
-          </a>
-        </nav>
-      </header>
-
+      <SiteHeader lang="zh" />
       <main className="mx-auto max-w-[744px] px-5 pt-10 pb-24 text-muted-foreground sm:px-8 sm:pt-14">
         <article className="max-w-[600px] leading-[1.75] [&_p+p]:mt-[1.5em] [&_ul]:mt-[1.5em]">
           <p className="text-foreground">
@@ -29,9 +26,6 @@ function Home() {
             等应用，或者转成 Markdown 交给 AI 整理。
           </p>
           <p>选好格式与打开方式后，不需要留在后台，平时只在分享菜单里见。</p>
-          <p>
-            <a href="https://0nl.onl/chengshu.apk">下载 APK</a>
-          </p>
           <p>
             在手机浏览器里看长文很受罪：满屏广告、浮动弹窗，动不动还要跳客户端。
           </p>
