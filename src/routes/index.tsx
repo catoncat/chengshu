@@ -13,12 +13,6 @@ function Home() {
         </a>
         <nav className="flex items-center gap-7 text-[13px] text-muted-foreground min-[641px]:text-sm">
           <a
-            href="https://0nl.onl/chengshu.apk"
-            className="text-inherit no-underline hover:text-foreground"
-          >
-            下载
-          </a>
-          <a
             href="https://github.com/catoncat/chengshu"
             className="text-inherit no-underline hover:text-foreground"
           >
@@ -35,20 +29,8 @@ function Home() {
             等应用，或者转成 Markdown 交给 AI 整理。
           </p>
           <p>选好格式与打开方式后，不需要留在后台，平时只在分享菜单里见。</p>
-          <p className="text-foreground">
-            <a
-              href="https://0nl.onl/chengshu.apk"
-              className="text-foreground no-underline hover:underline"
-            >
-              下载 APK
-            </a>
-            <span className="text-muted-foreground">{"  "}</span>
-            <a
-              href="https://github.com/catoncat/chengshu"
-              className="text-foreground no-underline hover:underline"
-            >
-              源码
-            </a>
+          <p>
+            <a href="https://0nl.onl/chengshu.apk">下载 APK</a>
           </p>
           <p>
             在手机浏览器里看长文很受罪：满屏广告、浮动弹窗，动不动还要跳客户端。
