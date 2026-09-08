@@ -41,17 +41,23 @@ public class ShareActivity extends Activity {
 
   private View home;
   private View converting;
+  private View confirm;
   private LinearLayout history;
+  private LinearLayout confirmFormats;
   private TextView empty;
   private TextView formatValue;
   private TextView destValue;
   private TextView hiddenValue;
   private TextView updateValue;
   private TextView status;
+  private TextView confirmTitle;
+  private TextView confirmHost;
   private ProgressBar progress;
   private SharedPreferences prefs;
   private Library library;
   private Update.Info pendingUpdate;
+  private String pendingUrl;
+  private String pendingTitle;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -62,19 +68,24 @@ public class ShareActivity extends Activity {
     migrateLegacy();
     home = findViewById(R.id.home);
     converting = findViewById(R.id.converting);
+    confirm = findViewById(R.id.confirm);
     history = findViewById(R.id.history);
+    confirmFormats = findViewById(R.id.confirmFormats);
     empty = findViewById(R.id.empty);
     formatValue = findViewById(R.id.formatValue);
     destValue = findViewById(R.id.destValue);
     hiddenValue = findViewById(R.id.hiddenValue);
     updateValue = findViewById(R.id.updateValue);
     status = findViewById(R.id.status);
+    confirmTitle = findViewById(R.id.confirmTitle);
+    confirmHost = findViewById(R.id.confirmHost);
     progress = findViewById(R.id.progress);
 
     findViewById(R.id.rowFormat).setOnClickListener(v -> pickFormat());
-    findViewById(R.id.rowDest).setOnClickListener(v -> pickDest());
+    findViewById(R.id.rowDest).setOnClickListener(v -> pickDest(currentFormat()));
     findViewById(R.id.rowHidden).setOnClickListener(v -> pickHidden());
     findViewById(R.id.rowUpdate).setOnClickListener(v -> onUpdateTap());
+    findViewById(R.id.confirmCancel).setOnClickListener(v -> cancelShare());
 
     handleIntent(getIntent());
   }
@@ -95,7 +106,11 @@ public class ShareActivity extends Activity {
     }
     String pageUrl = urlOf(intent);
     if (pageUrl != null) {
-      convertAndOpen(pageUrl, titleOf(intent), currentFormat(), true, false);
+      if (ShareFlow.autoConvertOnShare()) {
+        convertAndOpen(pageUrl, titleOf(intent), currentFormat(), true, false);
+      } else {
+        showShareConfirm(pageUrl, titleOf(intent));
+      }
     } else {
       showHome();
     }
@@ -117,10 +132,87 @@ public class ShareActivity extends Activity {
 
   private void showHome() {
     converting.setVisibility(View.GONE);
+    confirm.setVisibility(View.GONE);
     home.setVisibility(View.VISIBLE);
     refreshPrefs();
     refreshHistory();
     checkUpdate(false);
+  }
+
+  private void cancelShare() {
+    pendingUrl = null;
+    pendingTitle = null;
+    clearShareIntent();
+    showHome();
+  }
+
+  private void showShareConfirm(String pageUrl, String title) {
+    pendingUrl = pageUrl;
+    pendingTitle = title == null ? "" : title;
+    home.setVisibility(View.GONE);
+    converting.setVisibility(View.GONE);
+    confirm.setVisibility(View.VISIBLE);
+    String host = Library.hostOf(pageUrl);
+    confirmTitle.setText(pendingTitle.isEmpty() ? host : pendingTitle);
+    confirmHost.setText(host);
+    refreshConfirm();
+  }
+
+  private void refreshConfirm() {
+    if (confirmFormats == null) return;
+    confirmFormats.removeAllViews();
+    for (Format format : Format.ALL) {
+      confirmFormats.addView(confirmFormatRow(format));
+    }
+  }
+
+  private View confirmFormatRow(Format format) {
+    LinearLayout row = new LinearLayout(this);
+    row.setOrientation(LinearLayout.HORIZONTAL);
+    row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+    row.setPadding(dp(20), dp(14), dp(20), dp(14));
+    row.setBackgroundResource(android.R.drawable.list_selector_background);
+    row.setClickable(true);
+    LinearLayout left = new LinearLayout(this);
+    left.setOrientation(LinearLayout.VERTICAL);
+    left.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+    TextView title = new TextView(this);
+    title.setText(format.title);
+    title.setTextColor(getColor(R.color.ink));
+    title.setTextSize(16);
+    TextView hint = new TextView(this);
+    hint.setText(format.hint);
+    hint.setTextColor(getColor(R.color.muted));
+    hint.setTextSize(13);
+    hint.setPadding(0, dp(4), 0, 0);
+    left.addView(title);
+    left.addView(hint);
+    TextView dest = new TextView(this);
+    String pkg = prefs.getString(destKey(format), ASK);
+    dest.setText(pkg == null || pkg.isEmpty() ? "每次询问" : labelOf(pkg));
+    dest.setTextColor(getColor(R.color.muted));
+    dest.setTextSize(15);
+    dest.setPadding(dp(12), dp(8), 0, dp(8));
+    dest.setOnClickListener(v -> pickDest(format));
+    row.addView(left);
+    row.addView(dest);
+    row.setOnClickListener(v -> startShareConvert(format));
+    View line = new View(this);
+    line.setBackgroundColor(getColor(R.color.line));
+    LinearLayout wrap = new LinearLayout(this);
+    wrap.setOrientation(LinearLayout.VERTICAL);
+    wrap.addView(row);
+    wrap.addView(line, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+    return wrap;
+  }
+
+  private void startShareConvert(Format format) {
+    if (pendingUrl == null || pendingUrl.isEmpty()) {
+      showHome();
+      return;
+    }
+    prefs.edit().putString(KEY_FORMAT, format.id).apply();
+    convertAndOpen(pendingUrl, pendingTitle, format, true, false);
   }
 
   private void refreshPrefs() {
@@ -227,8 +319,7 @@ public class ShareActivity extends Activity {
         .show();
   }
 
-  private void pickDest() {
-    Format format = currentFormat();
+  private void pickDest(Format format) {
     List<Apps.Entry> apps = Apps.visible(this, format, prefs);
     List<String> labels = new ArrayList<>();
     List<String> pkgs = new ArrayList<>();
@@ -251,6 +342,7 @@ public class ShareActivity extends Activity {
               prefs.edit().putString(destKey(format), pkgs.get(which)).apply();
               d.dismiss();
               refreshPrefs();
+              refreshConfirm();
             })
         .setNeutralButton("排除…", (d, w) -> pickExclude(format))
         .show();
@@ -275,6 +367,7 @@ public class ShareActivity extends Activity {
                 prefs.edit().putString(destKey(format), ASK).apply();
               }
               refreshPrefs();
+              refreshConfirm();
             })
         .show();
   }
@@ -298,6 +391,15 @@ public class ShareActivity extends Activity {
         .show();
   }
 
+  @Override
+  public void onBackPressed() {
+    if (confirm != null && confirm.getVisibility() == View.VISIBLE) {
+      cancelShare();
+      return;
+    }
+    super.onBackPressed();
+  }
+
   private void convertAndOpen(
       String pageUrl, String title, Format format, boolean fromShare, boolean force) {
     Library.Item existing = library.findByUrl(pageUrl);
@@ -310,6 +412,7 @@ public class ShareActivity extends Activity {
       return;
     }
     home.setVisibility(View.GONE);
+    confirm.setVisibility(View.GONE);
     converting.setVisibility(View.VISIBLE);
     progress.setVisibility(View.VISIBLE);
     status.setText(existing == null || force ? "成书中" : "转成 " + format.title);

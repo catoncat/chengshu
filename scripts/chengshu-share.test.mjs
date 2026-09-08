@@ -47,3 +47,11 @@ test("recents relaunch is ignored only via LAUNCHED_FROM_HISTORY", () => {
   assert.match(flow, /FLAG_NEW_TASK = 0x10000000/);
   assert.doesNotMatch(manifest, /excludeFromRecents/);
 });
+
+test("share is one entry then a format picker, not four share targets", () => {
+  assert.match(activity, /showShareConfirm\(pageUrl/);
+  assert.match(activity, /startShareConvert/);
+  assert.match(flow, /static boolean autoConvertOnShare\(\) \{\s*return false;/);
+  const aliases = (manifest.match(/activity-alias/g) || []).length;
+  assert.equal(aliases, 0);
+});

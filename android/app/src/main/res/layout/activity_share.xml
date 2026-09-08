@@ -38,11 +38,28 @@
             android:orientation="horizontal"
             android:paddingLeft="20dp"
             android:paddingRight="20dp">
-            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="格式" android:textColor="@color/ink" android:textSize="16sp" />
-            <TextView android:id="@+id/formatValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/muted" android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="格式"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/formatValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
         </LinearLayout>
 
-        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginLeft="20dp" android:background="@color/line" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginLeft="20dp"
+            android:background="@color/line" />
 
         <LinearLayout
             android:id="@+id/rowDest"
@@ -55,11 +72,28 @@
             android:orientation="horizontal"
             android:paddingLeft="20dp"
             android:paddingRight="20dp">
-            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="打开方式" android:textColor="@color/ink" android:textSize="16sp" />
-            <TextView android:id="@+id/destValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/muted" android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="打开方式"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/destValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
         </LinearLayout>
 
-        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginLeft="20dp" android:background="@color/line" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginLeft="20dp"
+            android:background="@color/line" />
 
         <LinearLayout
             android:id="@+id/rowHidden"
@@ -72,11 +106,28 @@
             android:orientation="horizontal"
             android:paddingLeft="20dp"
             android:paddingRight="20dp">
-            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="排除的应用" android:textColor="@color/ink" android:textSize="16sp" />
-            <TextView android:id="@+id/hiddenValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/muted" android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="排除的应用"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/hiddenValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
         </LinearLayout>
 
-        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginLeft="20dp" android:background="@color/line" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginLeft="20dp"
+            android:background="@color/line" />
 
         <LinearLayout
             android:id="@+id/rowUpdate"
@@ -89,11 +140,27 @@
             android:orientation="horizontal"
             android:paddingLeft="20dp"
             android:paddingRight="20dp">
-            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="检查更新" android:textColor="@color/ink" android:textSize="16sp" />
-            <TextView android:id="@+id/updateValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/muted" android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="检查更新"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/updateValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
         </LinearLayout>
 
-        <View android:layout_width="match_parent" android:layout_height="8dp" android:background="@color/row" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:background="@color/row" />
 
         <TextView
             android:layout_width="match_parent"
@@ -118,7 +185,11 @@
             android:textSize="15sp"
             android:visibility="gone" />
 
-        <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
             <LinearLayout
                 android:id="@+id/history"
                 android:layout_width="match_parent"
@@ -129,6 +200,70 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/confirm"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingTop="36dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="8dp"
+            android:text="成书"
+            android:textColor="@color/ink"
+            android:textSize="22sp" />
+
+        <TextView
+            android:id="@+id/confirmTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:textColor="@color/ink"
+            android:textSize="16sp"
+            android:maxLines="3" />
+
+        <TextView
+            android:id="@+id/confirmHost"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="16dp"
+            android:textColor="@color/muted"
+            android:textSize="13sp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/line" />
+
+        <LinearLayout
+            android:id="@+id/confirmFormats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/confirmCancel"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:text="取消"
+            android:textColor="@color/muted"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/converting"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -136,6 +271,7 @@
         android:orientation="vertical"
         android:padding="28dp"
         android:visibility="gone">
+
         <TextView
             android:id="@+id/status"
             android:layout_width="match_parent"
@@ -144,6 +280,7 @@
             android:text="成书中"
             android:textColor="@color/ink"
             android:textSize="16sp" />
+
         <ProgressBar
             android:id="@+id/progress"
             android:layout_width="24dp"

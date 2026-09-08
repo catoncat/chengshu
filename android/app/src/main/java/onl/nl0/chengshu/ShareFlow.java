@@ -16,6 +16,10 @@ final class ShareFlow {
     return (flags & FLAG_LAUNCHED_FROM_HISTORY) == 0;
   }
 
+  static boolean autoConvertOnShare() {
+    return false;
+  }
+
   static boolean finishActivityAfterOpen(boolean openedChooser) {
     // Keep this activity alive after both the system chooser and a remembered
     // reader. finish() / finishAndRemoveTask() tears down the share-target task
