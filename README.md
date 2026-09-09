@@ -8,7 +8,7 @@
 - 下载：[chengshu.apk](https://0nl.onl/chengshu.apk)
 - English: [0nl.onl/en](https://0nl.onl/en)
 
-装好之后，用当前页面试一次即可。网站上也可以贴链接、贴正文、转本页。当前 Android 版本 **1.13**（发布后覆盖 1.12）。
+装好之后，用当前页面试一次即可。网站上也可以贴链接、贴正文、转本页。当前 Android 版本 **1.14**（覆盖 1.13）。
 
 ## 做什么
 

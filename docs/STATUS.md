@@ -5,16 +5,18 @@
 
 ## 1. 现在最重要的结论
 
-**下一发布：1.13 / versionCode 14。** 取消任务不得先入库产物；设备 EPUB 按小标题拆成多个 spine，并写 `body title`，避免微信读书把章节叫成 body。合并进 main 后发布作业会更新 [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk)。
+**公网已发布 1.13 / versionCode 14。** 下载 [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk)，sha256 `e77b11e1559765f70e69e96958f62d94c1e9153c885a9196a414bb9aba4bd46e`，sourceCommit `c1d3c63`。
 
-第一阶段 R01–R04 已在 1.12 落地。本分支继续做可靠执行。真机覆盖安装、阅读器导入、系统杀死后的 WorkManager 唤醒仍未验证。
+**本分支：1.14 / versionCode 15。** 分享路径走事务目录打包；首页可导出 ZIP 备份。合并后发布作业会更新官网 APK。
+
+真机覆盖安装、阅读器导入、系统杀死后的 WorkManager 唤醒仍未验证。
 
 ## 2. 当前事实与证据
 
 | 项目 | 已核实的状态 |
 | --- | --- |
-| 公网 1.12 | [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk) versionCode 13 |
-| 本分支版本 | 1.13 / 14，待 CI 与发布 |
+| 公网 1.13 | [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk) versionCode 14，hash 已核对 |
+| 本分支版本 | 1.14 / 15，待 CI 与发布 |
 | 真机覆盖 / 阅读器 | NOT_RUN |
 | B04 后台 WebView | 实验结论：不可行，NEEDS_USER |
 
@@ -28,9 +30,9 @@
 | --- | --- | --- | --- |
 | R01 | 空图片与缺图统计修复 | DONE | 1.12 / PR #3 |
 | R02 | 可重复构建与真实测试入口 | DONE | android-ci.sh |
-| R03 | 旧版覆盖升级与签名核验 | IN_PROGRESS | 版本与 hash 已记录；真机未跑 |
-| R04 | 自动版本与完整发布流水线 | DONE | publish-manifest.mjs |
-| R05 | 发布第一个确实能用的修复版 | IN_PROGRESS | 1.12 可下载；1.13 待本分支发布 |
+| R03 | 旧版覆盖升级与签名核验 | IN_PROGRESS | 1.13 可下载；真机覆盖未跑 |
+| R04 | 自动版本与完整发布流水线 | DONE | publish-manifest.mjs；1.13 已发布 |
+| R05 | 发布第一个确实能用的修复版 | IN_PROGRESS | 1.13 可下载；覆盖升级未跑 |
 | D01 | 固定旧版数据与故障语料 | DONE | tests/fixtures/articles；legacy 迁移测试 |
 | D02 | 事务元数据目录与无损迁移 | DONE | Store + ArticleRepository；JVM 测试，非 SQLite |
 | D03 | 版本快照、产物和提交凭据 | DONE | snapshot/artifact/receipt；重复 runInline 复用 |
@@ -52,24 +54,22 @@
 | S03 | 更新下载校验与长期签名方案 | IN_PROGRESS | sha256/来源/大小校验；不换钥匙 |
 | P01 | 主线程、内存与延迟优化 | IN_PROGRESS | 打包仍在后台线程；无 StrictMode 设备报告 |
 | P02 | 安全垃圾回收与低空间恢复 | DONE | Gc.dryRun/sweep 不删引用 |
-| P03 | 明确导出、备份与恢复 | IN_PROGRESS | 单文件分享已有；完整备份包未做 |
+| P03 | 明确导出、备份与恢复 | IN_PROGRESS | 单文件分享已有；ZIP 备份待本分支发布 |
 | M01 | 官网、说明与发布可见性 | DONE | 中英首页写明本地/PDF 边界；网站可粘贴/示例/转本页 |
 | M02 | 真实日常使用、最终验收与再排序 | IN_PROGRESS | 无 WeRead/KOReader 设备证据 |
 
 ## 5. 本轮施工记录
 
-日期 / 任务 ID：2026-09-09 / D04 + Q03 发布 1.13
+日期 / 任务 ID：2026-09-09 / 1.14 目录打包 + 备份
 
-状态：IN_PROGRESS，待 CI 转绿后合并
+状态：IN_PROGRESS
 
-工作分支：`feat/1.13-reliable-execution`
+工作分支：`feat/1.14-catalog-backup`
 
-已修：`StoreJobTest.cancelledOwnerCannotPublishOverNewRevision`。原先打包成功后先写 artifacts 再 commit，取消的任务仍会出现在最近。现在 blob 先落盘，owner/generation/revision 校验与入库同一把锁。
+1.13 已发布：versionCode 14，公网 APK hash 已核对。本分支让分享路径走 ConversionCoordinator（本地格式），首页可导出 ZIP 备份，不删除原文件。
 
-已修：设备 EPUB 两个及以上 h2 拆成 `chapter-N.xhtml`，每个文件写 `body title`；单章仍是 `chapter.xhtml`。
+未运行：真机覆盖、阅读器、WorkManager 设备重启、EPUBCheck 发行包。
 
-未运行：真机覆盖、阅读器、WorkManager 设备重启、EPUBCheck 发行包、完整备份。
+下一任务：CI 绿后合并并发布 1.14。
 
-下一任务：CI 绿后合并 PR #4，公网 APK 应变为 versionCode 14；随后 1.14 做首页任务状态、备份包、EPUBCheck。
-
-确实需要用户完成的操作：没有。若要验证覆盖升级，用已装 1.12 的手机装 1.13。
+确实需要用户完成的操作：没有。已装 1.12 的手机可先装 1.13，再覆盖 1.14。

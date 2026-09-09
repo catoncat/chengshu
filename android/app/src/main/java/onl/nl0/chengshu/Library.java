@@ -128,6 +128,40 @@ final class Library {
     } catch (IOException e) { throw new UncheckedIOException(e); }
   }
 
+  /** Zip every saved format and source snapshot. Does not delete originals. */
+  File exportBackup(File destDir) throws IOException {
+    Files.createDirectories(destDir.toPath());
+    File zipFile = new File(destDir, "chengshu-backup.zip");
+    int files = 0;
+    try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(new FileOutputStream(zipFile))) {
+      for (Item item : list()) {
+        String stem = fileStem(item.title);
+        String folder = item.id + "/";
+        for (String formatId : item.formats) {
+          Format format = Format.of(formatId);
+          File file = file(item, format);
+          if (file == null || !file.isFile() || file.length() == 0) continue;
+          zip.putNextEntry(new java.util.zip.ZipEntry(folder + stem + format.ext));
+          Files.copy(file.toPath(), zip);
+          zip.closeEntry();
+          files++;
+        }
+        PageExtractor.Article snap = snapshot(item.url);
+        if (snap != null && snap.content != null && !snap.content.isEmpty()) {
+          zip.putNextEntry(new java.util.zip.ZipEntry(folder + stem + ".source.html"));
+          zip.write(snap.content.getBytes(StandardCharsets.UTF_8));
+          zip.closeEntry();
+          files++;
+        }
+      }
+    }
+    if (files == 0) {
+      Files.deleteIfExists(zipFile.toPath());
+      throw new IOException("没有可导出的文件");
+    }
+    return zipFile;
+  }
+
   private Map<String, String> metadata(String url, String title) {
     Map<String, String> meta = new HashMap<>();
     meta.put("url", url);
