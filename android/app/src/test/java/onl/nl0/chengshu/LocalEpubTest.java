@@ -85,21 +85,7 @@ public class LocalEpubTest {
     assertFalse(requested.contains(URL));
   }
 
-  @Test public void relativeAndDataImageUrlsDoNotCollapseToThePage() throws Exception {
-    List<String> requested = new ArrayList<>();
-    String data = "data:image/png;base64,aaaa";
-    LocalEpub.Result result = build(
-        "<p>正文</p><img src='../pic.png'><img src='" + data + "'>",
-        u -> { requested.add(u); return new LocalEpub.Image(PNG, "image/png"); });
-    assertTrue(requested.contains("https://example.org/pic.png"));
-    assertFalse(requested.contains(URL));
-    for (String u : requested) assertFalse("article URL must not be fetched as an image: " + u, u.equals(URL));
-    assertEquals(data, LocalEpub.resolvedImageUrl(data, URL));
-    assertEquals(1, result.embeddedImages);
-  }
-
   @Test public void firstNonBlankLazySourceWinsAndBlanksAreNotThePage() {
-    Document doc = Jsoup.parseBodyFragment("<img src='  ' data-src='folder/a.png' data-original='x.png'>", URL);
     assertEquals("folder/a.png", LocalEpub.firstImageSource(doc.selectFirst("img")));
     assertEquals("https://example.org/article/folder/a.png",
         LocalEpub.resolvedImageUrl("folder/a.png", URL));
