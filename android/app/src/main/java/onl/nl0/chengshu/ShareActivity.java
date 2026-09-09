@@ -822,9 +822,9 @@ public class ShareActivity extends Activity {
       ChengshuNotify.requestIfNeeded(this);
       new Thread(() -> {
         try {
-          PageExtractor.Article cached = force ? null : library.snapshot(pageUrl);
-          if (cached != null && QualityReport.evaluate(cached.content, 0, 0).blocking())
-            cached = null; // A login or empty snapshot must not stick across retries.
+          PageExtractor.Article snapshot = force ? null : library.snapshot(pageUrl);
+          boolean stuck = snapshot != null && QualityReport.evaluate(snapshot.content, 0, 0).blocking();
+          final PageExtractor.Article cached = stuck ? null : snapshot; // Login/empty snapshots must not stick across retries.
           runOnUiThread(() -> {
             if (isDestroyed() || isFinishing()) { inbox.release(job); return; }
             if (cached != null) { packJob(job, format, cached, fromShare); return; }

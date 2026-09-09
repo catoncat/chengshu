@@ -177,6 +177,7 @@ test("txt markdown and html pack on device; pdf still posts extracted html", () 
   assert.doesNotMatch(activity, /bar\.setMinHeight/);
   assert.match(activity, /imageCache::load/);
   assert.match(activity, /Failures\.message/);
+  assert.match(activity, /final PageExtractor\.Article cached/);
   assert.match(activity, /QualityReport\.evaluate/);
   assert.match(activity, /openOriginal/);
   assert.match(activity, /job\.error/);
