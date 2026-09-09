@@ -214,6 +214,35 @@ public class LocalEpubTest {
     assertEquals("", LocalEpub.pickSrcset("  "));
   }
 
+  @Test public void pictureSourcePrefersJpegOverWebpWhenImgSrcIsBlank() {
+    Document doc = Jsoup.parseBodyFragment(
+        "<picture>"
+            + "<source type='image/webp' srcset='a.webp 640w, b.webp 1280w'/>"
+            + "<source type='image/jpeg' srcset='small.jpg 320w, large.jpg 1600w'/>"
+            + "<img alt='x'>"
+            + "</picture>",
+        URL);
+    LocalEpub.promotePictureSources(doc);
+    org.jsoup.nodes.Element img = doc.selectFirst("img");
+    assertNotNull(img);
+    assertEquals("large.jpg", img.attr("src"));
+    assertEquals(0, doc.select("picture").size());
+    Document keep = Jsoup.parseBodyFragment(
+        "<picture><source srcset='other.jpg 2x'/><img src='plain.jpg'></picture>", URL);
+    LocalEpub.promotePictureSources(keep);
+    assertEquals("plain.jpg", keep.selectFirst("img").attr("src"));
+  }
+
+  @Test public void pictureSourceImageIsEmbeddedAndResolvedAgainstTheArticle() throws Exception {
+    List<String> requested = new ArrayList<>();
+    LocalEpub.Result result = build(
+        "<p>图</p><picture><source type='image/jpeg' srcset='hero.jpg 1200w'/><img alt='hero'></picture>",
+        u -> { requested.add(u); return new LocalEpub.Image(PNG, "image/png"); });
+    assertEquals(Collections.singletonList("https://example.org/article/hero.jpg"), requested);
+    assertEquals(1, result.embeddedImages);
+    assertEquals(0, result.missingImages);
+  }
+
   @Test public void srcsetImageIsEmbeddedAndResolvedAgainstTheArticle() throws Exception {
     List<String> requested = new ArrayList<>();
     LocalEpub.Result result = build(

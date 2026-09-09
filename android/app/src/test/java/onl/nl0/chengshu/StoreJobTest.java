@@ -102,6 +102,30 @@ public class StoreJobTest {
     assertFalse(missing.blocking());
   }
 
+  @Test public void failuresMapNetworkStorageAndLoginWithoutPretendingSuccess() {
+    assertEquals(Failures.NETWORK, Failures.code(new java.net.UnknownHostException("x")));
+    assertEquals(Failures.NETWORK, Failures.code(new java.io.InterruptedIOException()));
+    assertEquals(Failures.STORAGE, Failures.code(new java.io.IOException("No space left on device")));
+    assertEquals(Failures.EMPTY, Failures.code(new java.io.IOException("没有提取到可阅读的正文")));
+    assertEquals(Failures.AUTH, Failures.fromQuality(QualityReport.evaluate("<p>请登录 后继续阅读</p>", 0, 0)));
+    assertTrue(Failures.message(Failures.NETWORK).contains("等待网络"));
+    assertTrue(Failures.attention(Failures.AUTH).contains("浏览器"));
+  }
+
+  @Test public void imageRepositoryReusesCachedBytesWithoutRefetch() throws Exception {
+    ArticleRepository articles = new ArticleRepository(temporary.newFolder());
+    java.util.concurrent.atomic.AtomicInteger loads = new java.util.concurrent.atomic.AtomicInteger();
+    ImageRepository cache = new ImageRepository(articles.store.blobs, u -> {
+      loads.incrementAndGet();
+      return new LocalEpub.Image(new byte[] {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10}, "image/png");
+    });
+    LocalEpub.Image first = cache.load("https://example.org/a.png");
+    LocalEpub.Image second = cache.load("https://example.org/a.png");
+    assertEquals(1, loads.get());
+    assertEquals(1, cache.fetches());
+    assertArrayEquals(first.bytes, second.bytes);
+  }
+
   @Test public void gcDryRunDoesNotDeleteReferencedBlobs() throws Exception {
     File root = temporary.newFolder();
     ArticleRepository articles = new ArticleRepository(root);

@@ -421,7 +421,7 @@ public class ShareActivity extends Activity {
     String title = job.title.isEmpty() ? Library.hostOf(job.url) : job.title;
     String state;
     if (inbox.running(job)) state = "正在处理";
-    else if (job.error != null && !job.error.isEmpty()) state = "这次没能完成 · 点此重试";
+    else if (job.error != null && !job.error.isEmpty()) state = job.error;
     else state = "未完成 · 点此继续";
     return actionRow(title, state, v -> startJob(job), v -> pendingMenu(job));
   }
@@ -816,11 +816,15 @@ public class ShareActivity extends Activity {
       converting.setVisibility(View.VISIBLE); progress.setVisibility(View.VISIBLE);
       findViewById(R.id.retry).setVisibility(View.GONE);
       findViewById(R.id.backToRecent).setVisibility(View.GONE);
+      View original = findViewById(R.id.openOriginal);
+      if (original != null) original.setVisibility(View.GONE);
       status.setText("链接已接住，正在读取正文");
       ChengshuNotify.requestIfNeeded(this);
       new Thread(() -> {
         try {
           PageExtractor.Article cached = force ? null : library.snapshot(pageUrl);
+          if (cached != null && QualityReport.evaluate(cached.content, 0, 0).blocking())
+            cached = null; // A login or empty snapshot must not stick across retries.
           runOnUiThread(() -> {
             if (isDestroyed() || isFinishing()) { inbox.release(job); return; }
             if (cached != null) { packJob(job, format, cached, fromShare); return; }
@@ -830,13 +834,15 @@ public class ShareActivity extends Activity {
               packJob(job, format, article, fromShare);
             });
           });
-        } catch (Exception e) { failJob(job); }
+        } catch (Exception e) { failJob(job, e); }
       }, "chengshu-source").start();
-    } catch (Exception e) { showFailure(activeJob); }
+    } catch (Exception e) { if (activeJob != null) failJob(activeJob, e); else showFailure(null); }
   }
 
   private void packJob(PendingShares.Job job, Format format, PageExtractor.Article article, boolean fromShare) {
-    if (article == null) { failJob(job); return; }
+    if (article == null) { failJob(job, Failures.TIMEOUT); return; }
+    QualityReport gate = QualityReport.evaluate(article.content, 0, 0);
+    if (gate.blocking()) { failJob(job, Failures.fromQuality(gate)); return; }
     status.setText(format == Format.EPUB ? "正文已提取，正在设备上整理图片和目录" : "正文已提取，正在联网生成 " + format.title);
     new Thread(() -> {
       try {
@@ -857,36 +863,54 @@ public class ShareActivity extends Activity {
           if (startNextJob()) return;
           openSaved(item, format, fromShare);
         });
-      } catch (Exception e) { failJob(job); }
+      } catch (Exception e) { failJob(job, e); }
     }, "chengshu-convert").start();
   }
 
-  private void failJob(PendingShares.Job job) {
-    try { inbox.fail(job); } catch (IOException ignored) { /* Initial capture remains durable. */ }
+  private void failJob(PendingShares.Job job) { failJob(job, Failures.CONVERSION); }
+
+  private void failJob(PendingShares.Job job, Exception e) { failJob(job, Failures.code(e)); }
+
+  private void failJob(PendingShares.Job job, String code) {
+    if (code == null || code.isEmpty()) code = Failures.CONVERSION;
+    final String failCode = code;
+    try { inbox.fail(job, failCode); } catch (IOException ignored) { /* Initial capture remains durable. */ }
     inbox.release(job);
     runOnUiThread(() -> {
       if (!resumed || isDestroyed() || isFinishing()) {
         String title = job == null || job.title.isEmpty()
             ? (job == null ? "这篇" : Library.hostOf(job.url)) : job.title;
-        results.failed(title, "FAILED");
+        results.failed(title, failCode);
         if (!isDestroyed() && !isFinishing()) showHome();
         return;
       }
       if (activeJob != null && activeJob.id.equals(job.id)) {
         activeJob = job;
         if (startNextJob()) return;
-        showFailure(job);
+        showFailure(job, failCode);
       }
     });
   }
 
   private void showFailure(PendingShares.Job job) {
+    showFailure(job, job == null || job.errorCode == null || job.errorCode.isEmpty()
+        ? Failures.CONVERSION : job.errorCode);
+  }
+
+  private void showFailure(PendingShares.Job job, String code) {
     home.setVisibility(View.GONE); confirm.setVisibility(View.GONE);
     converting.setVisibility(View.VISIBLE); progress.setVisibility(View.GONE);
-    status.setText(job == null ? "未能保存这个链接。请检查可用空间后重新分享。"
-        : "这次没能完成，链接和已保存的内容仍在。可以重试，或先回到最近。需要登录的网页请先在浏览器确认能阅读正文。");
+    status.setText(job == null
+        ? "未能保存这个链接。请检查可用空间后重新分享。"
+        : Failures.message(code));
     findViewById(R.id.retry).setVisibility(job == null ? View.GONE : View.VISIBLE);
     findViewById(R.id.backToRecent).setVisibility(View.VISIBLE);
+    View original = findViewById(R.id.openOriginal);
+    if (original != null) {
+      boolean show = job != null && job.url != null && (job.url.startsWith("http://") || job.url.startsWith("https://"));
+      original.setVisibility(show ? View.VISIBLE : View.GONE);
+      if (show) original.setOnClickListener(v -> openOriginal(job.url));
+    }
   }
 
   private void openSaved(Library.Item item, Format format, boolean fromShare) {
@@ -936,6 +960,8 @@ public class ShareActivity extends Activity {
     status.setText("文件已保存，但这次没能打开阅读器。回到最近可以重新打开，或点「更多」分享到其他应用。");
     findViewById(R.id.retry).setVisibility(View.GONE);
     findViewById(R.id.backToRecent).setVisibility(View.VISIBLE);
+    View original = findViewById(R.id.openOriginal);
+    if (original != null) original.setVisibility(View.GONE);
   }
 
   private void openFileUnchecked(File file, Format format, String title, boolean fromShare) {

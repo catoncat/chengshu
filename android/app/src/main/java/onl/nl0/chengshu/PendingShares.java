@@ -13,12 +13,13 @@ final class PendingShares {
   private final LocalArchive store;
   static long revision() { return REVISION.get(); }
   static final class Job {
-    final String id, url, title, format, error;
+    final String id, url, title, format, error, errorCode;
     final boolean force;
     final long created;
     Job(String id, Properties p) {
       this.id = id; url = p.getProperty("url", ""); title = p.getProperty("title", "");
       format = p.getProperty("format", ""); error = p.getProperty("error", "");
+      errorCode = p.getProperty("errorCode", "");
       force = Boolean.parseBoolean(p.getProperty("force", "false"));
       created = Long.parseLong(p.getProperty("created", "0"));
     }
@@ -37,12 +38,18 @@ final class PendingShares {
     REVISION.incrementAndGet(); return job;
   }
   Job choose(Job job, String format) throws IOException {
-    Map<String, String> patch = new HashMap<>(); patch.put("format", format); patch.put("error", "");
+    Map<String, String> patch = new HashMap<>(); patch.put("format", format); patch.put("error", ""); patch.put("errorCode", "");
     Job updated = new Job(job.id, store.put(job.id, patch, Collections.emptyMap()));
     REVISION.incrementAndGet(); return updated;
   }
-  void fail(Job job) throws IOException {
-    store.put(job.id, Collections.singletonMap("error", "未完成，点此重试"), Collections.emptyMap());
+  void fail(Job job) throws IOException { fail(job, Failures.CONVERSION); }
+
+  void fail(Job job, String code) throws IOException {
+    if (code == null || code.isEmpty()) code = Failures.CONVERSION;
+    Map<String, String> patch = new HashMap<>();
+    patch.put("error", Failures.attention(code));
+    patch.put("errorCode", code);
+    store.put(job.id, patch, Collections.emptyMap());
     REVISION.incrementAndGet();
   }
   void complete(Job job) throws IOException { store.delete(job.id); REVISION.incrementAndGet(); }
