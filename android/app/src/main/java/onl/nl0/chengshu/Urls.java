@@ -17,10 +17,10 @@ final class Urls {
       URI u = URI.create(raw.trim());
       String scheme = u.getScheme() == null ? "https" : u.getScheme().toLowerCase(Locale.ROOT);
       String host = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
-      String path = u.getPath() == null || u.getPath().isEmpty() ? "/" : u.getPath();
-      if (path.contains("%2f") || path.contains("%2F")) {
-        // Keep encoded slashes; they distinguish wiki and app routes.
-      } else if (path.length() > 1 && path.endsWith("/")) {
+      String path = u.getRawPath();
+      if (path == null || path.isEmpty()) path = "/";
+      boolean encodedSlash = path.contains("%2F") || path.contains("%2f");
+      if (!encodedSlash && path.length() > 1 && path.endsWith("/")) {
         path = path.substring(0, path.length() - 1);
       }
       String query = u.getRawQuery();

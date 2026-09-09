@@ -69,9 +69,9 @@ final class Store {
 
   private File record(String table, String id) throws IOException {
     if (table == null || !table.matches("[a-z_]+")) throw new IOException("无效表");
-    if (id == null || !id.matches("[a-zA-Z0-9:_-]{1,160}")) throw new IOException("无效标识");
+    if (id == null || id.isEmpty() || id.length() > 500) throw new IOException("无效标识");
     File dir = new File(root, table);
     Files.createDirectories(dir.toPath());
-    return new File(dir, id.replace(':', '_') + ".json");
+    return new File(dir, LocalArchive.digest(id.getBytes(StandardCharsets.UTF_8)) + ".json");
   }
 }

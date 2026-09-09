@@ -41,10 +41,14 @@ final class Update {
         json.optInt("versionCode", 0),
         json.optString("versionName", ""),
         json.optString("apk", APK),
-        json.optString("sha256", ""),
+        clean(json.optString("sha256", "")),
         json.optLong("size", 0),
         json.optString("channel", "stable"),
         json.optString("sourceCommit", ""));
+  }
+
+  private static String clean(String value) {
+    return value == null || "null".equals(value) ? "" : value;
   }
 
   static void assertSafe(Info info, int installed, String channel) throws Exception {
