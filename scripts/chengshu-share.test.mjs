@@ -150,7 +150,7 @@ test("empty image src is not turned into the article URL", () => {
   assert.match(epub, /static String firstImageSource/);
   assert.match(epub, /static String resolvedImageUrl/);
   assert.doesNotMatch(epub, /image\.absUrl\("src"\)/);
-  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 16/);
+  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 17/);
 });
 
 test("txt markdown and html pack on device; pdf still posts extracted html", () => {
@@ -168,6 +168,13 @@ test("txt markdown and html pack on device; pdf still posts extracted html", () 
   assert.match(activity, /ChengshuNotify\.show/);
   assert.match(activity, /!resumed \|\| isDestroyed/);
   assert.match(activity, /attentionHeader/);
+  assert.match(activity, /saveItemToFolder/);
+  assert.match(activity, /ACTION_CREATE_DOCUMENT/);
+  assert.match(activity, /setContentDescription\("更多操作"\)/);
+  assert.match(activity, /setMinimumHeight\(dp\(64\)\)/);
+  assert.doesNotMatch(activity, /bar\.setMinHeight/);
+  assert.match(activity, /imageCache::load/);
+  assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /addAttributes\("ol", "start"/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /tryExample/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /rowBackup/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /rowRestore/);

@@ -180,9 +180,22 @@ public class LocalEpubTest {
   }
   @Test public void tablesListsCodeAndSingleLineBreaksSurvive() throws Exception {
     String html = "<p>a<br>b</p><ol start='3'><li>first</li><li>next</li></ol>"
-        + "<table><tr><th>h</th><td>v</td></tr></table><pre><code> a\n  b</code></pre>";
+        + "<table><thead><tr><th colspan='2'>h</th></tr></thead><tbody><tr><td>v</td><td>w</td></tr></tbody></table>"
+        + "<pre><code> a\n  b</code></pre>";
     Document doc = Jsoup.parse(text(unzip(build(html, u -> null).bytes), "OEBPS/chapter.xhtml"));
     assertEquals(1, doc.select("table").size()); assertEquals(2, doc.select("ol li").size());
+    assertEquals("3", doc.selectFirst("ol").attr("start"));
+    assertEquals("2", doc.selectFirst("th").attr("colspan"));
+    assertEquals("h", doc.selectFirst("th").text());
     assertEquals(1, doc.select("br").size()); assertEquals(" a\n  b", doc.selectFirst("pre").wholeText());
+    String css = text(unzip(build(html, u -> null).bytes), "OEBPS/style.css");
+    assertTrue(css.contains("li{text-indent:0}"));
+  }
+  @Test public void nestedListsKeepStructure() throws Exception {
+    String html = "<ul><li>外层<ol><li>内一</li><li>内二</li></ol></li><li>另一项</li></ul>";
+    Document doc = Jsoup.parse(text(unzip(build(html, u -> null).bytes), "OEBPS/chapter.xhtml"));
+    assertEquals(1, doc.select("ul > li > ol").size());
+    assertEquals(2, doc.select("ul > li > ol > li").size());
+    assertEquals(2, doc.select("ul > li").size());
   }
 }

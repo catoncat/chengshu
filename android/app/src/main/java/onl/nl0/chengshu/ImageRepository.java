@@ -4,18 +4,28 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Bounded image cache. Cancel sets a flag that load() honors; it cannot abort a socket already returned. */
 final class ImageRepository {
   private final BlobStore blobs;
+  private final LocalEpub.ImageLoader loader;
   private final AtomicBoolean cancelled = new AtomicBoolean(false);
   private final ConcurrentHashMap<String, String> remembered = new ConcurrentHashMap<>();
+  private final AtomicInteger fetches = new AtomicInteger();
 
-  ImageRepository(BlobStore blobs) { this.blobs = blobs; }
+  ImageRepository(BlobStore blobs) { this(blobs, EpubImages::load); }
+
+  ImageRepository(BlobStore blobs, LocalEpub.ImageLoader loader) {
+    this.blobs = blobs;
+    this.loader = loader == null ? EpubImages::load : loader;
+  }
 
   void cancel() { cancelled.set(true); }
 
   void reset() { cancelled.set(false); }
+
+  int fetches() { return fetches.get(); }
 
   LocalEpub.Image load(String url) throws Exception {
     if (cancelled.get() || Thread.currentThread().isInterrupted())
@@ -25,7 +35,9 @@ final class ImageRepository {
       File file = blobs.file(rememberedHash);
       if (file != null) return decode(Files.readAllBytes(file.toPath()));
     }
-    LocalEpub.Image image = EpubImages.load(url);
+    LocalEpub.Image image = loader.load(url);
+    fetches.incrementAndGet();
+    if (image == null || image.bytes == null || image.bytes.length == 0) return image;
     File stored = blobs.put(image.bytes);
     remembered.put(url, stored.getName());
     return image;

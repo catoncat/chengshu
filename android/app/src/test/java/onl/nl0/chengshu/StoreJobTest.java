@@ -159,4 +159,25 @@ public class StoreJobTest {
     coordinator.runInline(articles.jobs.get(job.id), article, u -> { fail("must not rebuild"); return null; });
     assertEquals(1, notices.size());
   }
+
+  @Test public void imageCacheReusesBytesAndCancelStopsNewLoads() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger loads = new java.util.concurrent.atomic.AtomicInteger();
+    byte[] png = new byte[] {(byte)0x89,'P','N','G',13,10,26,10,0,0,0,0};
+    ArticleRepository articles = new ArticleRepository(temporary.newFolder());
+    ImageRepository images = new ImageRepository(articles.store.blobs, u -> {
+      loads.incrementAndGet();
+      return new LocalEpub.Image(png, "image/png");
+    });
+    String url = "https://example.org/pic.png";
+    LocalEpub.Image first = images.load(url);
+    LocalEpub.Image second = images.load(url);
+    assertEquals(1, loads.get());
+    assertArrayEquals(first.bytes, second.bytes);
+    images.cancel();
+    try {
+      images.load("https://example.org/other.png");
+      fail();
+    } catch (java.io.InterruptedIOException expected) { }
+    assertEquals(1, loads.get());
+  }
 }
