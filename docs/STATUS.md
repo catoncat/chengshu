@@ -5,9 +5,9 @@
 
 ## 1. 现在最重要的结论
 
-**公网已发布 1.15 / versionCode 16。** 下载 [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk)，sha256 `4fc600b8b4b07ac4947428d8be394dafb32233b43267a0d0d830f1dcbbe0c384`，sourceCommit `8ad778a`。
+**公网已发布 1.16 / versionCode 17。** 下载 [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk)，sha256 `11fd2c3b3e3a6a2b0e90065d074c2a1d72176374b3c3570c796f5dc04b21bdca`，sourceCommit `61d323a`。
 
-**本分支：1.16 / versionCode 17。** 每行有「更多」；可保存到文件夹；查看原文；图片缓存可复用/取消；EPUB 保留 ol start、表头 colspan、嵌套列表，列表不再被正文缩进挤歪。
+**本分支：1.17 / versionCode 18。** 同页绝对网址锚点收成书内跳转（脚注去程/回程跨章节仍可点）；无 src 时从 srcset / data-srcset 取最大候选图。
 
 真机覆盖安装、阅读器导入、系统杀死后的 WorkManager 唤醒、官方 EPUBCheck 二进制仍未验证。
 
@@ -15,8 +15,8 @@
 
 | 项目 | 已核实的状态 |
 | --- | --- |
-| 公网 1.15 | [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk) versionCode 16，hash 已核对 |
-| 本分支版本 | 1.16 / 17，待 CI 与发布 |
+| 公网 1.16 | [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk) versionCode 17，hash 已核对 |
+| 本分支版本 | 1.17 / 18，待 CI 与发布 |
 | 真机覆盖 / 阅读器 | NOT_RUN |
 | B04 后台 WebView | 实验结论：不可行，NEEDS_USER |
 
@@ -30,9 +30,9 @@
 | --- | --- | --- | --- |
 | R01 | 空图片与缺图统计修复 | DONE | 1.12 / PR #3 |
 | R02 | 可重复构建与真实测试入口 | DONE | android-ci.sh |
-| R03 | 旧版覆盖升级与签名核验 | IN_PROGRESS | 1.15 可下载；真机覆盖未跑 |
-| R04 | 自动版本与完整发布流水线 | DONE | publish-manifest.mjs；1.15 已发布 |
-| R05 | 发布第一个确实能用的修复版 | IN_PROGRESS | 1.15 可下载；覆盖升级未跑 |
+| R03 | 旧版覆盖升级与签名核验 | IN_PROGRESS | 1.16 可下载；真机覆盖未跑 |
+| R04 | 自动版本与完整发布流水线 | DONE | publish-manifest.mjs；1.16 已发布 |
+| R05 | 发布第一个确实能用的修复版 | IN_PROGRESS | 1.16 可下载；覆盖升级未跑 |
 | D01 | 固定旧版数据与故障语料 | DONE | tests/fixtures/articles；legacy 迁移测试 |
 | D02 | 事务元数据目录与无损迁移 | DONE | Store + ArticleRepository；JVM 测试，非 SQLite |
 | D03 | 版本快照、产物和提交凭据 | DONE | snapshot/artifact/receipt；重复 runInline 复用 |
@@ -46,8 +46,8 @@
 | U03 | 失败恢复、文件分享与导出 | IN_PROGRESS | 分享/保存到文件夹/查看原文；取消文件选择器不删书 |
 | U04 | 深色、大字体、无障碍与返回 | IN_PROGRESS | values-night；48dp「更多」；TalkBack 设备未跑 |
 | Q01 | 固定阅读语料与 EPUBCheck | IN_PROGRESS | EpubInspect 结构门禁；未接官方 EPUBCheck 发行包 |
-| Q02 | 图片持久资源清单与有界流水线 | IN_PROGRESS | ImageRepository 缓存复用与取消测试；未接全预算矩阵 |
-| Q03 | 目录、脚注、排版与语义保真 | IN_PROGRESS | ol start、th colspan、嵌套列表、列表不缩进 |
+| Q02 | 图片持久资源清单与有界流水线 | IN_PROGRESS | ImageRepository 缓存；srcset 取最大候选；未接全预算矩阵 |
+| Q03 | 目录、脚注、排版与语义保真 | IN_PROGRESS | 同页绝对锚点收成书内跳转；ol start、th colspan、嵌套列表 |
 | Q04 | 结构化质量报告与异常提示 | DONE | QualityReport 规则与登录页误报测试 |
 | S01 | 服务端网络、缓存与第三方边界 | DONE | fetchPublic 跳转校验；cacheKey 全文；私网 IP 测试 |
 | S02 | TXT / Markdown / HTML 设备端输出 | DONE | LocalPack；PDF 仍服务端 |
@@ -60,21 +60,19 @@
 
 ## 5. 本轮施工记录
 
-日期 / 任务 ID：2026-09-09 / 1.16 行内操作 + 保存到文件夹 + 列表表格保真
+日期 / 任务 ID：2026-09-09 / 1.17 同页锚点 + srcset
 
 状态：IN_PROGRESS
 
-工作分支：`feat/1.16-row-actions`
+工作分支：`feat/1.17-anchors-srcset`
 
-1.15 已发布：versionCode 16，公网 APK hash 已核对。本分支：
+1.16 已发布：versionCode 17，公网 APK hash 已核对。本分支：
 
-- 最近/需要注意每一行有可点的「更多」，不再只能长按。
-- 已保存文章可「保存到文件夹」（系统文件选择器）；取消选择不删除原文件。可查看原文。
-- 设备端打包复用 ImageRepository 缓存；取消后不再发起新的图片请求。
-- EPUB 保留编号起点、表头合并单元格、嵌套列表；列表项不再使用正文首行缩进。
+- 指向当前文章的绝对网址锚点（含未编码中文 fragment）收成 `#id`，再走既有重命名与跨文件改写，脚注去程/回程可点。站外和它页链接保持原网址。
+- `img` 在 src / data-src / data-original 都空时，从 `srcset` 或 `data-srcset` 选取最大 `w` / `x` 候选；有非空 src 时仍优先 src。
 
 未运行：真机覆盖、阅读器、WorkManager 设备重启、官方 EPUBCheck JAR、TalkBack。
 
-下一任务：CI 绿后合并并发布 1.16。
+下一任务：CI 绿后合并并发布 1.17。
 
-确实需要用户完成的操作：没有。已装旧版的手机可直接覆盖安装 1.16。
+确实需要用户完成的操作：没有。已装旧版的手机可直接覆盖安装 1.17。
