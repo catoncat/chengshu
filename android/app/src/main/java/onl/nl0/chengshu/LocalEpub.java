@@ -6,6 +6,8 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.*;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.*;
@@ -44,6 +46,13 @@ final class LocalEpub {
     final List<Chapter> children = new ArrayList<>();
     Chapter(String title, String target, int level) {
       this.title = title; this.target = target; this.level = level;
+    }
+  }
+
+  private static final class ChapterDoc {
+    final String id, href, title, xhtml;
+    ChapterDoc(String id, String href, String title, String xhtml) {
+      this.id = id; this.href = href; this.title = title; this.xhtml = xhtml;
     }
   }
 
@@ -109,9 +118,6 @@ final class LocalEpub {
       if (renamed.containsKey(original)) link.attr("href", "#" + renamed.get(original));
       else link.removeAttr("href"); // Do not ship a known-broken internal jump.
     }
-    Chapter toc = new Chapter(title, "chapter.xhtml", 0);
-    Deque<Chapter> parents = new ArrayDeque<>();
-    parents.push(toc);
     for (Element heading : body.select("h1,h2,h3,h4,h5,h6")) {
       if (heading.text().trim().isEmpty()) continue;
       if (heading.id().isEmpty()) {
@@ -119,11 +125,6 @@ final class LocalEpub {
         do { id = "section-" + (++sequence); } while (ids.contains(id));
         ids.add(id); heading.attr("id", id);
       }
-      int level = heading.tagName().charAt(1) - '0';
-      Chapter chapter = new Chapter(heading.text(), "chapter.xhtml#" + heading.id(), level);
-      while (parents.peek().level >= level) parents.pop();
-      parents.peek().children.add(chapter);
-      parents.push(chapter);
     }
 
     Map<String, Resource> resources = fetchImages(body, loader);
@@ -145,28 +146,45 @@ final class LocalEpub {
     if (unsupported > 0) warning += "有 " + unsupported + " 处交互或特殊媒体未包含，请查看原文。";
     String lang = (title + body.text()).matches("(?s).*[\\u4e00-\\u9fff].*") ? "zh" : "en";
     String identifier = "urn:sha256:" + LocalArchive.digest((url + "\n" + html).getBytes(StandardCharsets.UTF_8));
-    String chapter = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        + "<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"" + lang + "\"><head><title>"
-        + xml(title) + "</title><link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/></head><body>"
-        + "<h1 id=\"chengshu-title\">" + xml(title) + "</h1><p class=\"meta\">"
-        + (byline.isEmpty() ? "" : xml(byline) + " · ") + "<a href=\"" + xml(url) + "\">原文</a></p>"
-        + (warning.isEmpty() ? "" : "<p class=\"warning\">" + xml(warning) + "</p>")
-        + body.html() + "</body></html>";
+
+    List<ChapterDoc> chapters = splitChapters(body.html(), title);
+    Map<String, String> idFile = idToFile(chapters);
+    if (chapters.size() > 1) chapters = rewriteCrossFileLinks(chapters, idFile);
+
+    Chapter toc = new Chapter(title, chapters.get(0).href, 0);
+    Deque<Chapter> parents = new ArrayDeque<>();
+    parents.push(toc);
+    for (Element heading : body.select("h1,h2,h3,h4,h5,h6")) {
+      if (heading.text().trim().isEmpty()) continue;
+      String file = idFile.getOrDefault(heading.id(), chapters.get(0).href);
+      int level = heading.tagName().charAt(1) - '0';
+      Chapter chapter = new Chapter(heading.text(), file + "#" + heading.id(), level);
+      while (parents.peek().level >= level) parents.pop();
+      parents.peek().children.add(chapter);
+      parents.push(chapter);
+    }
+
     StringBuilder manifest = new StringBuilder();
+    for (ChapterDoc ch : chapters) {
+      manifest.append("<item id=\"").append(ch.id).append("\" href=\"").append(ch.href)
+          .append("\" media-type=\"application/xhtml+xml\"/>");
+    }
     int imageIndex = 0;
     for (Resource resource : resources.values()) manifest.append("<item id=\"img")
         .append(++imageIndex).append("\" href=\"").append(resource.path)
         .append("\" media-type=\"").append(resource.image.mime).append("\"/>");
+    StringBuilder spine = new StringBuilder();
+    for (ChapterDoc ch : chapters) spine.append("<itemref idref=\"").append(ch.id).append("\"/>");
     String opf = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         + "<package xmlns=\"http://www.idpf.org/2007/opf\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\""
         + " unique-identifier=\"bookid\" version=\"2.0\"><metadata><dc:identifier id=\"bookid\">"
         + identifier + "</dc:identifier><dc:title>" + xml(title) + "</dc:title><dc:language>" + lang
         + "</dc:language><dc:source>" + xml(url) + "</dc:source>"
         + (byline.isEmpty() ? "" : "<dc:creator>" + xml(byline) + "</dc:creator>")
-        + "</metadata><manifest><item id=\"chapter\" href=\"chapter.xhtml\" media-type=\"application/xhtml+xml\"/>"
+        + "</metadata><manifest>" + manifest
         + "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>"
-        + "<item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>" + manifest
-        + "</manifest><spine toc=\"ncx\"><itemref idref=\"chapter\"/></spine></package>";
+        + "<item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>"
+        + "</manifest><spine toc=\"ncx\">" + spine + "</spine></package>";
     StringBuilder navigation = new StringBuilder();
     appendNavigation(toc, navigation, new int[] {0});
     String ncx = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -184,13 +202,97 @@ final class LocalEpub {
       zip.putNextEntry(first); zip.write(mime); zip.closeEntry();
       put(zip, "META-INF/container.xml", "<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>");
       put(zip, "OEBPS/content.opf", opf); put(zip, "OEBPS/toc.ncx", ncx);
-      put(zip, "OEBPS/chapter.xhtml", chapter); put(zip, "OEBPS/style.css", CSS);
+      boolean firstChapter = true;
+      for (ChapterDoc ch : chapters) {
+        put(zip, "OEBPS/" + ch.href, wrapXhtml(lang, ch.title, title, byline, url, firstChapter ? warning : "", ch.xhtml, firstChapter));
+        firstChapter = false;
+      }
+      put(zip, "OEBPS/style.css", CSS);
       for (Resource resource : resources.values()) {
         zip.putNextEntry(new ZipEntry("OEBPS/" + resource.path));
         zip.write(resource.image.bytes); zip.closeEntry();
       }
     }
     return new Result(bytes.toByteArray(), title, warning, embedded, missing);
+  }
+
+  private static List<ChapterDoc> splitChapters(String xhtml, String bookTitle) {
+    String source = xhtml == null ? "" : xhtml.trim();
+    if (source.isEmpty()) source = "<p></p>";
+    Pattern delim = Pattern.compile("(?i)(<h2\\b[^>]*>[\\s\\S]*?</h2>)");
+    Matcher matcher = delim.matcher(source);
+    List<String> pieces = new ArrayList<>();
+    int last = 0;
+    while (matcher.find()) {
+      pieces.add(source.substring(last, matcher.start()));
+      pieces.add(matcher.group(1));
+      last = matcher.end();
+    }
+    pieces.add(source.substring(last));
+    int headings = 0;
+    for (int i = 1; i < pieces.size(); i += 2) headings++;
+    if (headings < 2) {
+      return Collections.singletonList(new ChapterDoc("chapter", "chapter.xhtml", bookTitle, source));
+    }
+    List<ChapterDoc> chapters = new ArrayList<>();
+    String intro = pieces.get(0).trim();
+    if (!intro.isEmpty()) {
+      chapters.add(new ChapterDoc("ch" + (chapters.size() + 1),
+          "chapter-" + (chapters.size() + 1) + ".xhtml", bookTitle, intro));
+    }
+    for (int i = 1; i < pieces.size(); i += 2) {
+      String heading = pieces.get(i);
+      String rest = i + 1 < pieces.size() ? pieces.get(i + 1) : "";
+      String headingTitle = Jsoup.parse(heading).text().trim();
+      if (headingTitle.isEmpty() || "body".equalsIgnoreCase(headingTitle)) headingTitle = bookTitle;
+      chapters.add(new ChapterDoc("ch" + (chapters.size() + 1),
+          "chapter-" + (chapters.size() + 1) + ".xhtml", headingTitle, (heading + rest).trim()));
+    }
+    return chapters;
+  }
+
+  private static Map<String, String> idToFile(List<ChapterDoc> chapters) {
+    Map<String, String> map = new HashMap<>();
+    for (ChapterDoc ch : chapters) {
+      for (Element e : Jsoup.parseBodyFragment(ch.xhtml).select("[id]")) {
+        map.putIfAbsent(e.id(), ch.href);
+      }
+    }
+    return map;
+  }
+
+  private static List<ChapterDoc> rewriteCrossFileLinks(List<ChapterDoc> chapters, Map<String, String> idFile) {
+    List<ChapterDoc> out = new ArrayList<>();
+    for (ChapterDoc ch : chapters) {
+      Document frag = Jsoup.parseBodyFragment(ch.xhtml);
+      frag.outputSettings().syntax(Document.OutputSettings.Syntax.xml)
+          .escapeMode(Entities.EscapeMode.xhtml).prettyPrint(false);
+      for (Element a : frag.select("a[href^=#]")) {
+        String id = a.attr("href").substring(1);
+        String file = idFile.get(id);
+        if (file != null && !file.equals(ch.href)) a.attr("href", file + "#" + id);
+      }
+      out.add(new ChapterDoc(ch.id, ch.href, ch.title, frag.body().html()));
+    }
+    return out;
+  }
+
+  private static String wrapXhtml(String lang, String chapterTitle, String bookTitle, String byline,
+      String url, String warning, String inner, boolean first) {
+    StringBuilder out = new StringBuilder();
+    out.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    out.append("<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"").append(lang)
+        .append("\"><head><title>").append(xml(chapterTitle))
+        .append("</title><link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/></head>");
+    out.append("<body title=\"").append(xml(chapterTitle)).append("\">");
+    if (first) {
+      out.append("<h1 id=\"chengshu-title\">").append(xml(bookTitle)).append("</h1><p class=\"meta\">");
+      if (!byline.isEmpty()) out.append(xml(byline)).append(" · ");
+      out.append("<a href=\"").append(xml(url)).append("\">原文</a></p>");
+      if (!warning.isEmpty()) out.append("<p class=\"warning\">").append(xml(warning)).append("</p>");
+    }
+    out.append(inner).append("</body></html>");
+    return out.toString();
   }
 
   private static void paragraphize(Element body) {
@@ -326,9 +428,9 @@ final class LocalEpub {
     return clean.toString();
   }
   private static final String CSS = "body{line-height:1.65;margin:0;padding:0}"
-      + "h1,h2,h3,h4,h5,h6{line-height:1.3;margin:1.2em 0 .6em}p{margin:.7em 0}"
-      + "img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere}"
+      + "h1,h2,h3,h4,h5,h6{line-height:1.3;margin:1.2em 0 .6em}p{margin:.7em 0;text-indent:2em;text-align:justify}"
+      + "img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;text-indent:0}"
       + "table{max-width:100%;border-collapse:collapse}td,th{border:1px solid;padding:.3em}"
-      + ".meta,.caption,.warning,.missing-image{font-size:.9em}.caption{text-align:center}"
-      + "blockquote{margin:1em;padding-left:1em;border-left:2px solid}a{color:inherit}";
+      + ".meta,.caption,.warning,.missing-image{font-size:.9em;text-indent:0}.caption{text-align:center}"
+      + "blockquote{margin:1em;padding-left:1em;border-left:2px solid}blockquote p{text-indent:0}a{color:inherit}";
 }

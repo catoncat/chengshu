@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blockify, extractBlocks } from "./article-html.ts";
+import { blockify, blocksToMarkdown, extractBlocks } from "./article-html.ts";
 
 test("double <br> essays become many paragraphs", () => {
   const html = `<div>July 2023 <br> <br> If you collected lists of techniques.<br> <br> Partly my goal was to create a guide.<br> <br> The first step is to decide what to work on.</div>`;
@@ -27,4 +27,10 @@ test("real <p> tags are kept", () => {
 test("linkedom-style fragment does not collapse to one block", () => {
   const blocks = extractBlocks("<p>一</p><p>二</p><p>三</p>");
   assert.equal(blocks.filter((b) => b.kind === "p").length, 3);
+});
+
+test("markdown export does not squash headings", () => {
+  const md = blocksToMarkdown(extractBlocks(`<h2>节</h2><p>甲。</p><p>乙。</p>`));
+  assert.match(md, /## 节/);
+  assert.match(md, /甲/);
 });

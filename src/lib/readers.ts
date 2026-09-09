@@ -1,5 +1,6 @@
 export type ReaderId =
   | "share"
+  | "weread"
   | "koreader"
   | "librera"
   | "moonplus"
@@ -20,6 +21,12 @@ export const READERS: Reader[] = [
     label: "每次选择",
     hint: "弹出能打开 EPUB 的应用列表",
     packages: [],
+  },
+  {
+    id: "weread",
+    label: "微信读书",
+    hint: "排版和翻译都在阅读器里",
+    packages: ["com.tencent.weread", "com.tencent.weread.online"],
   },
   {
     id: "koreader",

@@ -1,7 +1,7 @@
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import { marked } from "marked";
-import { assertPublicHttpUrl, isPublicHttpUrl } from "./ssrf";
+import { assertPublicHttpUrl, isPublicHttpUrl, fetchPublic } from "./ssrf";
 import { sanitizeFilename, bookTitle } from "@/lib/utils";
 import { buildEpub } from "./epub-pack";
 import { articleFromUnknown, isThinHtml, jsonCandidateUrls } from "./json-article";
@@ -243,10 +243,9 @@ function extractFromText(text: string, title?: string): Extracted {
 }
 
 async function fetchHtml(url: string): Promise<string> {
-  const res = await fetch(url, {
-    redirect: "follow",
-    cache: "no-store",
+  const res = await fetchPublic(url, {
     signal: AbortSignal.timeout(16000),
+    maxBytes: MAX_HTML_BYTES,
     headers: {
       "User-Agent": UA,
       Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
@@ -305,10 +304,9 @@ async function jsonApiExtract(pageUrl: string): Promise<Extracted | null> {
   for (const href of candidates) {
     try {
       if (!isPublicHttpUrl(href)) continue;
-      const res = await fetch(href, {
-        redirect: "follow",
-        cache: "no-store",
+      const res = await fetchPublic(href, {
         signal: AbortSignal.timeout(8000),
+        maxBytes: MAX_HTML_BYTES,
         headers: {
           "User-Agent": UA,
           Accept: "application/json,text/json;q=0.9,*/*;q=0.1",

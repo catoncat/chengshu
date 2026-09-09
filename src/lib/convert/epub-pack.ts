@@ -7,6 +7,13 @@ export type EpubImage = {
   data: Uint8Array;
 };
 
+export type EpubChapter = {
+  id: string;
+  href: string;
+  title: string;
+  xhtml: string;
+};
+
 function escapeXml(value: string) {
   return value
     .replaceAll("\u0026", "\u0026amp;")
@@ -29,6 +36,43 @@ function usableTitle(value: string, fallback: string) {
   return t;
 }
 
+function stripTags(html: string) {
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&/gi, "&")
+    .replace(/</gi, "<")
+    .replace(/>/gi, ">")
+    .replace(/"/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Split on h2 so WeChat Reading / KOReader get a real TOC, not one “body” chapter. */
+export function splitChapters(xhtml: string, bookTitle: string): EpubChapter[] {
+  const source = (xhtml || "").trim() || "<p></p>";
+  const pieces = source.split(/(<h2\b[^>]*>[\s\S]*?<\/h2>)/i);
+  const headingCount = pieces.filter((_, i) => i % 2 === 1).length;
+  if (headingCount < 2) {
+    return [{ id: "chapter", href: "chapter.xhtml", title: bookTitle, xhtml: source }];
+  }
+  const chapters: { title: string; xhtml: string }[] = [];
+  const intro = (pieces[0] || "").trim();
+  if (intro) chapters.push({ title: bookTitle, xhtml: intro });
+  for (let i = 1; i < pieces.length; i += 2) {
+    const heading = pieces[i] || "";
+    const body = pieces[i + 1] || "";
+    const title = usableTitle(stripTags(heading), bookTitle);
+    chapters.push({ title, xhtml: `${heading}${body}`.trim() });
+  }
+  return chapters.map((ch, index) => ({
+    id: `ch${index + 1}`,
+    href: `chapter-${index + 1}.xhtml`,
+    title: ch.title,
+    xhtml: ch.xhtml,
+  }));
+}
+
 /** EPUB 2 + NCX. 微信读书 ignores EPUB 3 nav and names the chapter "body". */
 export async function buildEpub(input: {
   title: string;
@@ -45,7 +89,9 @@ export async function buildEpub(input: {
   const cover = input.images[0];
   const fallback =
     usableTitle(input.siteName, "") || hostName(input.sourceUrl) || "未命名";
-  const title = escapeXml(usableTitle(input.title, fallback));
+  const title = usableTitle(input.title, fallback);
+  const titleXml = escapeXml(title);
+  const chapters = splitChapters(input.xhtml, title);
 
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
   zip.file(
@@ -60,8 +106,10 @@ export async function buildEpub(input: {
 
   const manifestItems = [
     `<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`,
-    `<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>`,
     `<item id="css" href="style.css" media-type="text/css"/>`,
+    ...chapters.map(
+      (ch) => `<item id="${ch.id}" href="${ch.href}" media-type="application/xhtml+xml"/>`,
+    ),
     ...input.images.map(
       (img) => `<item id="${img.id}" href="${img.href}" media-type="${img.mediaType}"/>`,
     ),
@@ -73,7 +121,7 @@ export async function buildEpub(input: {
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="2.0">
   <metadata>
     <dc:identifier id="bookid" opf:scheme="UUID">urn:uuid:${id}</dc:identifier>
-    <dc:title>${title}</dc:title>
+    <dc:title>${titleXml}</dc:title>
     <dc:language>${lang}</dc:language>
     ${input.byline ? `<dc:creator opf:role="aut">${escapeXml(input.byline)}</dc:creator>` : ""}
     ${input.siteName ? `<dc:publisher>${escapeXml(input.siteName)}</dc:publisher>` : ""}
@@ -85,10 +133,10 @@ export async function buildEpub(input: {
     ${manifestItems.join("\n    ")}
   </manifest>
   <spine toc="ncx">
-    <itemref idref="chapter"/>
+    ${chapters.map((ch) => `<itemref idref="${ch.id}"/>`).join("\n    ")}
   </spine>
   <guide>
-    <reference type="text" title="${title}" href="chapter.xhtml"/>
+    <reference type="text" title="${titleXml}" href="${chapters[0]!.href}"/>
   </guide>
 </package>`,
   );
@@ -103,12 +151,16 @@ export async function buildEpub(input: {
     <meta name="dtb:totalPageCount" content="0"/>
     <meta name="dtb:maxPageNumber" content="0"/>
   </head>
-  <docTitle><text>${title}</text></docTitle>
+  <docTitle><text>${titleXml}</text></docTitle>
   <navMap>
-    <navPoint id="ch1" playOrder="1">
-      <navLabel><text>${title}</text></navLabel>
-      <content src="chapter.xhtml"/>
-    </navPoint>
+    ${chapters
+      .map(
+        (ch, i) => `<navPoint id="${ch.id}" playOrder="${i + 1}">
+      <navLabel><text>${escapeXml(ch.title)}</text></navLabel>
+      <content src="${ch.href}"/>
+    </navPoint>`,
+      )
+      .join("\n    ")}
   </navMap>
 </ncx>`,
   );
@@ -121,22 +173,26 @@ export async function buildEpub(input: {
       : "",
   ].filter(Boolean);
 
-  zip.file(
-    "OEBPS/chapter.xhtml",
-    `<?xml version="1.0" encoding="UTF-8"?>
+  for (const [index, ch] of chapters.entries()) {
+    const showMeta = index === 0 && metaBits.length > 0;
+    const heading = escapeXml(ch.title);
+    zip.file(
+      `OEBPS/${ch.href}`,
+      `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
   <head>
-    <title>${title}</title>
+    <title>${heading}</title>
     <link rel="stylesheet" type="text/css" href="style.css"/>
   </head>
-  <body title="${title}">
-    <h1>${title}</h1>
-    ${metaBits.length ? `<p class="meta">${metaBits.join(" · ")}</p>` : ""}
-    ${input.xhtml}
+  <body title="${heading}">
+    <h1>${heading}</h1>
+    ${showMeta ? `<p class="meta">${metaBits.join(" · ")}</p>` : ""}
+    ${ch.xhtml}
   </body>
 </html>`,
-  );
+    );
+  }
 
   zip.file(
     "OEBPS/style.css",

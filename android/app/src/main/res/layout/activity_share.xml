@@ -22,6 +22,56 @@
             android:textColor="@color/ink"
             android:textSize="22sp" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:paddingBottom="8dp"
+            android:text="把想认真读的网页，送进你的阅读器。"
+            android:textColor="@color/muted"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:id="@+id/tryExample"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minHeight="48dp"
+                android:gravity="center"
+                android:background="@color/ink"
+                android:text="试一篇文章"
+                android:textColor="@color/on_green"
+                android:textSize="15sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="试一篇内置示例文章" />
+
+            <TextView
+                android:id="@+id/pasteLink"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginLeft="12dp"
+                android:minHeight="48dp"
+                android:gravity="center"
+                android:background="@color/row"
+                android:text="粘贴链接"
+                android:textColor="@color/ink"
+                android:textSize="15sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="粘贴链接，不会自动读取剪贴板" />
+        </LinearLayout>
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -184,7 +234,7 @@
             android:paddingLeft="20dp"
             android:paddingRight="20dp"
             android:paddingTop="12dp"
-            android:text="从 Chrome 分享网页到成书。"
+            android:text="从 Chrome 分享网页到成书。以后点「分享 → 成书」即可。"
             android:textColor="@color/muted"
             android:textSize="15sp"
             android:visibility="gone" />

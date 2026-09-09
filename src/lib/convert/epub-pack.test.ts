@@ -58,3 +58,23 @@ test("EPUB CSS is book-like and leaves reflow to the reader", async () => {
   assert.match(css, /line-break:strict/);
   assert.match(css, /Source Han Serif/);
 });
+
+test("two h2 headings become NCX chapters", async () => {
+  const zip = await JSZip.loadAsync(
+    await buildEpub({
+      title: "成书",
+      byline: "",
+      siteName: "0nl.onl",
+      excerpt: "",
+      sourceUrl: "https://0nl.onl/",
+      xhtml: "<p>引子。</p><h2>第一节</h2><p>甲。</p><h2>第二节</h2><p>乙。</p>",
+      images: [],
+    }),
+  );
+  const ncx = await zip.file("OEBPS/toc.ncx")!.async("string");
+  assert.match(ncx, /第一节/);
+  assert.match(ncx, /第二节/);
+  assert.ok(zip.file("OEBPS/chapter-1.xhtml"));
+  assert.ok(zip.file("OEBPS/chapter-2.xhtml"));
+  assert.equal(zip.file("OEBPS/chapter.xhtml"), null);
+});

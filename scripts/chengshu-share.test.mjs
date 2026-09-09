@@ -143,5 +143,14 @@ test("empty image src is not turned into the article URL", () => {
   assert.match(epub, /static String firstImageSource/);
   assert.match(epub, /static String resolvedImageUrl/);
   assert.doesNotMatch(epub, /image\.absUrl\("src"\)/);
-  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 13/);
+  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 14/);
 });
+
+test("txt markdown and html pack on device; pdf still posts extracted html", () => {
+  assert.match(activity, /LocalPack\.build/);
+  assert.match(activity, /runExample/);
+  assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /tryExample/);
+  assert.equal(fs.existsSync("android/app/src/main/assets/example-article.html"), true);
+  assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/Update.java", "utf8"), /sha256/);
+});
+

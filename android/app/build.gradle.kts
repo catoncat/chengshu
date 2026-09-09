@@ -9,8 +9,8 @@ android {
         applicationId = "onl.nl0.chengshu"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.12"
+        versionCode = 14
+        versionName = "1.13"
     }
     signingConfigs {
         create("stable") {
@@ -52,4 +52,5 @@ dependencies {
     implementation("org.jsoup:jsoup:1.23.2")
     implementation("androidx.core:core:1.13.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

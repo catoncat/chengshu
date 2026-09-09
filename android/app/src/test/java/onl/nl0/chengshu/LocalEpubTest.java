@@ -39,20 +39,63 @@ public class LocalEpubTest {
     for (String path : new String[] {"META-INF/container.xml", "OEBPS/content.opf", "OEBPS/toc.ncx", "OEBPS/chapter.xhtml"})
       assertNotNull(factory.newDocumentBuilder().parse(new ByteArrayInputStream(files.get(path))));
     assertTrue(text(files, "OEBPS/content.opf").contains("version=\"2.0\""));
+    assertTrue(text(files, "OEBPS/chapter.xhtml").contains("body title="));
     assertEquals("", result.warning);
   }
   @Test public void nestedContentsAndFootnotesHaveRealTargets() throws Exception {
     Map<String, byte[]> files = unzip(build("<h2 id='起点'>A</h2><h3>B</h3><p id='back'><a href='#注释'>1</a></p>"
         + "<p id='注释'>Note <a href='#back'>back</a></p><h2 id='起点'>C</h2>", u -> null).bytes);
-    Document body = Jsoup.parse(text(files, "OEBPS/chapter.xhtml"));
-    Set<String> ids = new HashSet<>(); body.select("[id]").forEach(e -> assertTrue(ids.add(e.id())));
-    body.select("a[href^=\"#\"]").forEach(a -> assertTrue(ids.contains(a.attr("href").substring(1))));
+    Set<String> ids = new HashSet<>();
+    Map<String, Set<String>> idsIn = new HashMap<>();
+    for (String path : files.keySet()) {
+      if (!path.endsWith(".xhtml")) continue;
+      String href = path.substring(path.lastIndexOf('/') + 1);
+      Document body = Jsoup.parse(text(files, path));
+      Set<String> local = new HashSet<>();
+      body.select("[id]").forEach(e -> { assertTrue(ids.add(e.id())); local.add(e.id()); });
+      idsIn.put(href, local);
+    }
+    for (String path : files.keySet()) {
+      if (!path.endsWith(".xhtml")) continue;
+      String href = path.substring(path.lastIndexOf('/') + 1);
+      Document body = Jsoup.parse(text(files, path));
+      body.select("a[href]").forEach(a -> {
+        String target = a.attr("href");
+        if (target.startsWith("#")) assertTrue(href + " " + target, idsIn.get(href).contains(target.substring(1)));
+        else if (target.contains("#")) {
+          String id = target.substring(target.indexOf('#') + 1);
+          assertTrue(id, ids.contains(id));
+        }
+      });
+    }
     Document ncx = Jsoup.parse(text(files, "OEBPS/toc.ncx"), "", org.jsoup.parser.Parser.xmlParser());
     assertEquals(4, ncx.select("navPoint").size());
     assertTrue(ncx.select("navPoint > navPoint > navPoint").size() > 0);
     ncx.select("content").forEach(e -> {
       String target = e.attr("src"); if (target.contains("#")) assertTrue(ids.contains(target.split("#")[1]));
     });
+    assertNotNull(files.get("OEBPS/chapter-1.xhtml"));
+    assertNotNull(files.get("OEBPS/chapter-2.xhtml"));
+    assertNull(files.get("OEBPS/chapter.xhtml"));
+    assertTrue(text(files, "OEBPS/chapter-1.xhtml").contains("body title="));
+    assertTrue(text(files, "OEBPS/chapter-2.xhtml").contains("title=\"C\""));
+  }
+  @Test public void twoH2HeadingsBecomeSeparateSpineDocuments() throws Exception {
+    Map<String, byte[]> files = unzip(build("<p>引子。</p><h2>第一节</h2><p>甲。</p><h2>第二节</h2><p>乙。</p>", u -> null).bytes);
+    String opf = text(files, "OEBPS/content.opf");
+    assertTrue(opf.contains("href=\"chapter-1.xhtml\""));
+    assertTrue(opf.contains("href=\"chapter-2.xhtml\""));
+    assertTrue(opf.contains("href=\"chapter-3.xhtml\""));
+    assertTrue(opf.contains("<itemref idref=\"ch1\"/>"));
+    assertTrue(opf.contains("<itemref idref=\"ch2\"/>"));
+    assertTrue(opf.contains("<itemref idref=\"ch3\"/>"));
+    String ncx = text(files, "OEBPS/toc.ncx");
+    assertTrue(ncx.contains("第一节"));
+    assertTrue(ncx.contains("第二节"));
+    assertTrue(text(files, "OEBPS/chapter-1.xhtml").contains("引子"));
+    assertTrue(text(files, "OEBPS/chapter-2.xhtml").contains("甲"));
+    assertTrue(text(files, "OEBPS/chapter-3.xhtml").contains("乙"));
+    assertTrue(text(files, "OEBPS/chapter-2.xhtml").contains("body title=\"第一节\""));
   }
   @Test public void moreThanTwelveImagesAndDuplicateUrlsAreHandled() throws Exception {
     StringBuilder html = new StringBuilder("<p>Image essay</p>");
