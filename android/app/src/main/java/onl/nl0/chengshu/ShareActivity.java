@@ -44,6 +44,7 @@ public class ShareActivity extends Activity {
   private static final String KEY_READER = "reader_package";
   private static final String ASK = "";
   private static final int REQ_BACKUP = 72;
+  private static final int REQ_SAVE_FILE = 73;
   private PendingShares inbox;
   private PendingShares.Job activeJob;
   private boolean extracting;
@@ -81,6 +82,8 @@ public class ShareActivity extends Activity {
   private ArticleRepository articles;
   private ConversionCoordinator coordinator;
   private ResultsNotifier results;
+  private ImageRepository imageCache;
+  private File pendingExport;
   private Update.Info pendingUpdate;
   private String pendingUrl;
   private String pendingTitle;
@@ -92,6 +95,7 @@ public class ShareActivity extends Activity {
     prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
     library = new Library(this);
     articles = new ArticleRepository(new File(getFilesDir(), "chengshu-db"));
+    imageCache = new ImageRepository(articles.store.blobs);
     results = new ResultsNotifier(notice -> ChengshuNotify.show(ShareActivity.this, notice));
     coordinator = new ConversionCoordinator(articles);
     inbox = new PendingShares(new File(getFilesDir(), "pending-shares"));
@@ -151,6 +155,7 @@ public class ShareActivity extends Activity {
       PageExtractor.cancel(this);
       inbox.release(activeJob);
     }
+    if (imageCache != null) imageCache.cancel();
     refreshHandler.removeCallbacksAndMessages(null);
     super.onDestroy();
   }
@@ -256,6 +261,7 @@ public class ShareActivity extends Activity {
     pendingUrl = null;
     pendingTitle = null;
     activeJob = null; // Keep the captured link in the retryable inbox.
+    if (imageCache != null) { imageCache.cancel(); imageCache.reset(); }
     clearShareIntent();
     showHome();
   }
@@ -402,27 +408,7 @@ public class ShareActivity extends Activity {
       if (attentionHeader != null)
         attentionHeader.setVisibility(jobs.isEmpty() ? View.GONE : View.VISIBLE);
       for (PendingShares.Job job : jobs) {
-        TextView row = new TextView(this);
-        String title = job.title.isEmpty() ? Library.hostOf(job.url) : job.title;
-        String state;
-        if (inbox.running(job)) state = "正在处理";
-        else if (job.error != null && !job.error.isEmpty()) state = "这次没能完成 · 点此重试";
-        else state = "未完成 · 点此继续";
-        row.setText(title + "\n" + state);
-        row.setTextColor(getColor(R.color.ink)); row.setTextSize(16);
-        row.setPadding(dp(20), dp(16), dp(20), dp(16)); row.setMinHeight(dp(64));
-        row.setBackgroundResource(android.R.drawable.list_selector_background);
-        row.setOnClickListener(v -> startJob(job));
-        row.setOnLongClickListener(v -> {
-          if (inbox.running(job)) return true;
-          new AlertDialog.Builder(this).setMessage("移除这个待处理链接？已保存的文件不会删除。")
-              .setPositiveButton("移除", (d, w) -> {
-                try { inbox.complete(job); refreshHistory(); }
-                catch (IOException e) { Toast.makeText(this, "未能移除，链接仍保留", Toast.LENGTH_LONG).show(); }
-              }).setNegativeButton("保留", null).show();
-          return true;
-        });
-        (attention != null ? attention : history).addView(row);
+        (attention != null ? attention : history).addView(pendingRow(job));
       }
       for (Library.Item item : items) history.addView(historyRow(item));
     } catch (Exception e) {
@@ -431,73 +417,120 @@ public class ShareActivity extends Activity {
     }
   }
 
+  private View pendingRow(PendingShares.Job job) {
+    String title = job.title.isEmpty() ? Library.hostOf(job.url) : job.title;
+    String state;
+    if (inbox.running(job)) state = "正在处理";
+    else if (job.error != null && !job.error.isEmpty()) state = "这次没能完成 · 点此重试";
+    else state = "未完成 · 点此继续";
+    return actionRow(title, state, v -> startJob(job), v -> pendingMenu(job));
+  }
+
   private View historyRow(Library.Item item) {
-    LinearLayout row = new LinearLayout(this);
-    row.setOrientation(LinearLayout.VERTICAL);
-    row.setPadding(dp(20), dp(14), dp(20), dp(14));
-    row.setBackgroundResource(android.R.drawable.list_selector_background);
-    row.setClickable(true);
+    return actionRow(
+        item.title,
+        item.host + " · " + Format.of(item.lastFormat).title + " · " + relative(item.updated),
+        v -> openItem(item, Format.of(item.lastFormat)),
+        v -> itemMenu(item));
+  }
+
+  private View actionRow(String titleText, String metaText, View.OnClickListener open, View.OnClickListener more) {
+    LinearLayout bar = new LinearLayout(this);
+    bar.setOrientation(LinearLayout.HORIZONTAL);
+    bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+    bar.setPadding(dp(20), dp(10), dp(8), dp(10));
+    bar.setMinHeight(dp(64));
+    bar.setBackgroundResource(android.R.drawable.list_selector_background);
+    bar.setClickable(true);
+    bar.setOnClickListener(open);
+    bar.setOnLongClickListener(v -> { more.onClick(v); return true; });
+    LinearLayout text = new LinearLayout(this);
+    text.setOrientation(LinearLayout.VERTICAL);
+    text.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
     TextView title = new TextView(this);
-    title.setText(item.title);
+    title.setText(titleText);
     title.setTextColor(getColor(R.color.ink));
     title.setTextSize(16);
     title.setMaxLines(2);
     TextView meta = new TextView(this);
-    meta.setText(
-        item.host
-            + " · "
-            + Format.of(item.lastFormat).title
-            + " · "
-            + relative(item.updated));
+    meta.setText(metaText);
     meta.setTextColor(getColor(R.color.muted));
     meta.setTextSize(13);
     meta.setPadding(0, dp(4), 0, 0);
-    row.addView(title);
-    row.addView(meta);
-    row.setOnClickListener(v -> openItem(item, Format.of(item.lastFormat)));
-    row.setOnLongClickListener(
-        v -> {
-          itemMenu(item);
-          return true;
-        });
+    text.addView(title);
+    text.addView(meta);
+    TextView moreBtn = new TextView(this);
+    moreBtn.setText("更多");
+    moreBtn.setTextColor(getColor(R.color.ink));
+    moreBtn.setTextSize(14);
+    moreBtn.setMinWidth(dp(48));
+    moreBtn.setMinHeight(dp(48));
+    moreBtn.setGravity(android.view.Gravity.CENTER);
+    moreBtn.setContentDescription("更多操作");
+    moreBtn.setClickable(true);
+    moreBtn.setFocusable(true);
+    moreBtn.setOnClickListener(more);
+    bar.addView(text);
+    bar.addView(moreBtn);
     View line = new View(this);
     line.setBackgroundColor(getColor(R.color.line));
     LinearLayout wrap = new LinearLayout(this);
     wrap.setOrientation(LinearLayout.VERTICAL);
-    wrap.addView(row);
+    wrap.addView(bar);
     wrap.addView(line, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
     return wrap;
   }
 
-  private void itemMenu(Library.Item item) {
-    String[] actions = new String[Format.ALL.length + 4];
-    actions[0] = "打开";
-    for (int i = 0; i < Format.ALL.length; i++) {
-      Format format = Format.ALL[i];
-      boolean have = library.has(item, format);
-      actions[i + 1] = (have ? "打开 " : "转成 ") + format.title;
+  private void pendingMenu(PendingShares.Job job) {
+    if (inbox.running(job)) {
+      Toast.makeText(this, "这篇正在保存，完成后会出现在最近", Toast.LENGTH_SHORT).show();
+      return;
     }
-    actions[actions.length - 3] = "分享到其他应用";
-    actions[actions.length - 2] = "重新抓取";
-    actions[actions.length - 1] = "删除";
+    String[] actions = new String[] {
+      job.error != null && !job.error.isEmpty() ? "重试" : "继续",
+      "查看原文",
+      "移除"
+    };
+    new AlertDialog.Builder(this)
+        .setTitle(job.title.isEmpty() ? Library.hostOf(job.url) : job.title)
+        .setItems(actions, (d, which) -> {
+          if (which == 0) startJob(job);
+          else if (which == 1) openOriginal(job.url);
+          else {
+            try { inbox.complete(job); refreshHistory(); }
+            catch (IOException e) { Toast.makeText(this, "未能移除，链接仍保留", Toast.LENGTH_LONG).show(); }
+          }
+        })
+        .show();
+  }
+
+  private void itemMenu(Library.Item item) {
+    java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+    java.util.ArrayList<Runnable> acts = new java.util.ArrayList<>();
+    labels.add("打开");
+    acts.add(() -> openItem(item, Format.of(item.lastFormat)));
+    for (Format format : Format.ALL) {
+      boolean have = library.has(item, format);
+      labels.add((have ? "打开 " : "转成 ") + format.title);
+      Format chosen = format;
+      acts.add(() -> openItem(item, chosen));
+    }
+    labels.add("分享到其他应用");
+    acts.add(() -> shareItem(item));
+    labels.add("保存到文件夹");
+    acts.add(() -> saveItemToFolder(item));
+    labels.add("查看原文");
+    acts.add(() -> openOriginal(item.url));
+    labels.add("重新抓取");
+    acts.add(() -> convertAndOpen(item.url, item.title, Format.of(item.lastFormat), false, true));
+    labels.add("删除");
+    acts.add(() -> {
+      try { library.delete(item); refreshHistory(); }
+      catch (Exception e) { Toast.makeText(this, "删除未完成，原记录仍保留", Toast.LENGTH_LONG).show(); }
+    });
     new AlertDialog.Builder(this)
         .setTitle(item.title)
-        .setItems(
-            actions,
-            (d, which) -> {
-              if (which == 0) {
-                openItem(item, Format.of(item.lastFormat));
-              } else if (which == actions.length - 1) {
-                try { library.delete(item); refreshHistory(); }
-                catch (Exception e) { Toast.makeText(this, "删除未完成，原记录仍保留", Toast.LENGTH_LONG).show(); }
-              } else if (which == actions.length - 3) {
-                shareItem(item);
-              } else if (which == actions.length - 2) {
-                convertAndOpen(item.url, item.title, Format.of(item.lastFormat), false, true);
-              } else {
-                openItem(item, Format.ALL[which - 1]);
-              }
-            })
+        .setItems(labels.toArray(new String[0]), (d, which) -> acts.get(which).run())
         .show();
   }
 
@@ -542,6 +575,14 @@ public class ShareActivity extends Activity {
   @Override
   protected void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode == REQ_SAVE_FILE) {
+      if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+        pendingExport = null; // Chooser cancel must not delete the saved book.
+        return;
+      }
+      copyExportTo(data.getData());
+      return;
+    }
     if (requestCode != REQ_BACKUP || resultCode != RESULT_OK || data == null || data.getData() == null)
       return;
     Uri uri = data.getData();
@@ -589,6 +630,55 @@ public class ShareActivity extends Activity {
       chooser.setClipData(send.getClipData());
       startActivity(chooser);
     } catch (RuntimeException e) { handoffFailed(); }
+  }
+
+  private void saveItemToFolder(Library.Item item) {
+    try {
+      Format format = Format.of(item.lastFormat);
+      File file = titledCopy(library.file(item, format), format, item.title);
+      pendingExport = file;
+      Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+      create.addCategory(Intent.CATEGORY_OPENABLE);
+      create.setType(format.mime);
+      create.putExtra(Intent.EXTRA_TITLE, Library.fileStem(item.title) + format.ext);
+      startActivityForResult(create, REQ_SAVE_FILE);
+    } catch (ActivityNotFoundException e) {
+      pendingExport = null;
+      Toast.makeText(this, "没有可用的文件选择器，可以用分享把文件交给其他应用", Toast.LENGTH_LONG).show();
+    } catch (RuntimeException e) {
+      pendingExport = null;
+      handoffFailed();
+    }
+  }
+
+  private void openOriginal(String url) {
+    if (url == null || url.isEmpty()) {
+      Toast.makeText(this, "没有原文地址", Toast.LENGTH_LONG).show();
+      return;
+    }
+    try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
+    catch (ActivityNotFoundException e) { Toast.makeText(this, "未找到浏览器", Toast.LENGTH_LONG).show(); }
+  }
+
+  private void copyExportTo(Uri dest) {
+    File src = pendingExport;
+    pendingExport = null;
+    if (src == null || !src.isFile() || dest == null) {
+      Toast.makeText(this, "没有可保存的文件", Toast.LENGTH_LONG).show();
+      return;
+    }
+    new Thread(() -> {
+      try (InputStream in = new FileInputStream(src);
+           java.io.OutputStream out = getContentResolver().openOutputStream(dest)) {
+        if (out == null) throw new IOException("无法写入所选位置");
+        byte[] buf = new byte[16384];
+        int n;
+        while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
+        runOnUiThread(() -> Toast.makeText(this, "已保存到所选位置", Toast.LENGTH_LONG).show());
+      } catch (Exception e) {
+        runOnUiThread(() -> Toast.makeText(this, "这次没能写到所选位置，原文件仍在成书里", Toast.LENGTH_LONG).show());
+      }
+    }, "chengshu-export").start();
   }
 
   private void pickFormat() {
@@ -721,6 +811,7 @@ public class ShareActivity extends Activity {
       activeJob = inbox.choose(activeJob, format.id);
       final PendingShares.Job job = activeJob;
       if (!inbox.claim(job)) { activeJob = null; showHome(); return; }
+      if (imageCache != null) imageCache.reset();
       home.setVisibility(View.GONE); confirm.setVisibility(View.GONE);
       converting.setVisibility(View.VISIBLE); progress.setVisibility(View.VISIBLE);
       findViewById(R.id.retry).setVisibility(View.GONE);
@@ -805,10 +896,7 @@ public class ShareActivity extends Activity {
     new AlertDialog.Builder(this).setTitle("文件已保存，有内容需要注意").setMessage(warning)
         .setPositiveButton("继续阅读", (d, w) -> openSavedFile(item, format, fromShare))
         .setNegativeButton("保留到最近", null)
-        .setNeutralButton("查看原文", (d, w) -> {
-          try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(item.url))); }
-          catch (ActivityNotFoundException e) { Toast.makeText(this, "未找到浏览器", Toast.LENGTH_LONG).show(); }
-        }).show();
+        .setNeutralButton("查看原文", (d, w) -> openOriginal(item.url)).show();
   }
 
   private void openSavedFile(Library.Item item, Format format, boolean fromShare) {
@@ -845,7 +933,7 @@ public class ShareActivity extends Activity {
   private void handoffFailed() {
     home.setVisibility(View.GONE); confirm.setVisibility(View.GONE);
     converting.setVisibility(View.VISIBLE); progress.setVisibility(View.GONE);
-    status.setText("文件已保存，但这次没能打开阅读器。回到最近可以重新打开，或长按文章分享到其他应用。");
+    status.setText("文件已保存，但这次没能打开阅读器。回到最近可以重新打开，或点「更多」分享到其他应用。");
     findViewById(R.id.retry).setVisibility(View.GONE);
     findViewById(R.id.backToRecent).setVisibility(View.VISIBLE);
   }
@@ -928,7 +1016,7 @@ public class ShareActivity extends Activity {
     }
     String url = article.sourceUrl == null || article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl;
     JobRepository.Job catalog = coordinator.enqueueSavedSnapshot(url, format.id, article);
-    File packed = coordinator.runInline(catalog, article, EpubImages::load);
+    File packed = coordinator.runInline(catalog, article, imageCache == null ? EpubImages::load : imageCache::load);
     if (packed == null || !packed.isFile() || packed.length() < 8)
       throw new IOException("没有生成可用文件");
     QualityReport quality = articles.artifactQuality(catalog.articleId, format);

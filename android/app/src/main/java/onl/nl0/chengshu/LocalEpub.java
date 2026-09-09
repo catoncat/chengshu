@@ -87,6 +87,11 @@ final class LocalEpub {
     Safelist allowed = Safelist.relaxed()
         .addTags("h1", "h2", "h3", "h4", "h5", "h6", "div", "span", "hr", "sup", "sub", "del")
         .addAttributes(":all", "id", "class")
+        .addAttributes("ol", "start", "type")
+        .addAttributes("ul", "type")
+        .addAttributes("li", "value")
+        .addAttributes("td", "colspan", "rowspan")
+        .addAttributes("th", "colspan", "rowspan", "scope")
         .addProtocols("a", "href", "#")
         .addProtocols("img", "src", "data")
         .preserveRelativeLinks(true);
@@ -435,7 +440,8 @@ final class LocalEpub {
   private static final String CSS = "body{line-height:1.65;margin:0;padding:0}"
       + "h1,h2,h3,h4,h5,h6{line-height:1.3;margin:1.2em 0 .6em}p{margin:.7em 0;text-indent:2em;text-align:justify}"
       + "img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;text-indent:0}"
-      + "table{max-width:100%;border-collapse:collapse}td,th{border:1px solid;padding:.3em}"
+      + "table{max-width:100%;border-collapse:collapse}td,th{border:1px solid;padding:.3em}th{font-weight:bold;text-align:left}"
+      + "ol,ul{padding-left:1.6em;margin:.7em 0}li{text-indent:0}li p,td p,th p{text-indent:0}"
       + ".meta,.caption,.warning,.missing-image,.footnote{font-size:.9em;text-indent:0}.caption{text-align:center}"
       + "sup{font-size:.75em;line-height:0;vertical-align:super}sub{font-size:.75em;line-height:0;vertical-align:sub}"
       + "blockquote{margin:1em;padding-left:1em;border-left:2px solid}blockquote p{text-indent:0}a{color:inherit}";
