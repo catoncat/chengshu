@@ -92,10 +92,10 @@ public class LocalEpubTest {
         "<p>正文</p><img src='../pic.png'><img src='" + data + "'>",
         u -> { requested.add(u); return new LocalEpub.Image(PNG, "image/png"); });
     assertTrue(requested.contains("https://example.org/pic.png"));
-    assertTrue(requested.contains(data));
     assertFalse(requested.contains(URL));
-    assertEquals(2, result.embeddedImages);
-    assertEquals(0, result.missingImages);
+    for (String u : requested) assertFalse("article URL must not be fetched as an image: " + u, u.equals(URL));
+    assertEquals(data, LocalEpub.resolvedImageUrl(data, URL));
+    assertEquals(1, result.embeddedImages);
   }
 
   @Test public void firstNonBlankLazySourceWinsAndBlanksAreNotThePage() {
