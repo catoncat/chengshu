@@ -1,199 +1,194 @@
 package onl.nl0.chengshu;
 
 import android.content.Context;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.io.*;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class Library {
   private final File root;
-  private final File indexFile;
+  private final LocalArchive archive;
 
-  Library(Context context) {
-    root = new File(context.getFilesDir(), "library");
-    indexFile = new File(root, "index.json");
-    if (!root.exists()) root.mkdirs();
+  Library(Context context) { this(context.getFilesDir()); }
+
+  Library(File filesDir) {
+    root = new File(filesDir, "library");
+    archive = new LocalArchive(new File(root, "vault"));
   }
 
-  synchronized List<Item> list() {
-    return readIndex();
+  List<Item> list() {
+    try {
+      Map<String, Properties> records = archive.list();
+      List<Item> items = new ArrayList<>();
+      for (Map.Entry<String, Properties> entry : records.entrySet()) {
+        if (!"true".equals(entry.getValue().getProperty("deleted"))
+            && entry.getValue().stringPropertyNames().stream().anyMatch(k -> k.startsWith("blob.") && !k.equals("blob.source")))
+          items.add(item(entry.getKey(), entry.getValue()));
+      }
+      // Read old installations without eagerly copying their entire library.
+      for (Item legacy : legacyIndex()) if (!records.containsKey(legacy.id)) items.add(legacy);
+      items.sort((a, b) -> Long.compare(b.updated, a.updated));
+      return items;
+    } catch (IOException e) { throw new UncheckedIOException(e); }
   }
 
-  synchronized Item findByUrl(String url) {
+  Item findByUrl(String url) {
     String id = idFor(normalizeUrl(url));
-    for (Item item : readIndex()) {
-      if (item.id.equals(id)) return item;
-    }
+    for (Item item : list()) if (item.id.equals(id)) return item;
     return null;
   }
 
-  synchronized File file(Item item, Format format) {
-    File dir = itemDir(item.id);
-    File named = new File(dir, fileStem(item.title) + format.ext);
-    if (named.isFile()) return named;
-    File[] matches = dir.listFiles((d, n) -> n != null && n.endsWith(format.ext));
-    if (matches != null) {
-      for (File f : matches) {
-        if (f.getName().equals("body" + format.ext)) {
-          if (!named.getName().equals(f.getName()) && f.renameTo(named) && named.isFile()) {
-            return named;
-          }
-          return f;
-        }
+  File file(Item item, Format format) {
+    try {
+      if (item.modern) {
+        File file = archive.file(item.id, format.id);
+        return file == null ? new File(root, "missing/" + item.id + format.ext) : file;
       }
-      if (matches.length == 1) return matches[0];
-    }
-    return named;
+      File dir = new File(root, item.id);
+      File named = new File(dir, fileStem(item.title) + format.ext);
+      if (named.isFile()) return named;
+      File[] matches = dir.listFiles((d, n) -> n.endsWith(format.ext));
+      if (matches != null) {
+        for (File match : matches) if (match.getName().equals("body" + format.ext)) return match;
+        if (matches.length == 1) return matches[0];
+      }
+      return named;
+    } catch (IOException e) { throw new UncheckedIOException(e); }
   }
 
-  synchronized boolean has(Item item, Format format) {
-    return file(item, format).isFile() && file(item, format).length() > 0;
+  boolean has(Item item, Format format) {
+    try { File file = file(item, format); return file.isFile() && file.length() > 0; }
+    catch (UncheckedIOException e) { return false; }
   }
 
-  synchronized Item save(String url, String title, Format format, byte[] body) throws Exception {
+  Item save(String url, String title, Format format, byte[] body) throws Exception {
+    return save(url, title, format, body, "");
+  }
+
+  Item save(String url, String title, Format format, byte[] body, String warning) throws Exception {
+    migrate(url);
     String normalized = normalizeUrl(url);
     String id = idFor(normalized);
-    File dir = itemDir(id);
-    if (!dir.exists()) dir.mkdirs();
-    List<Item> items = readIndex();
-    Item found = null;
-    for (Iterator<Item> it = items.iterator(); it.hasNext(); ) {
-      Item item = it.next();
-      if (item.id.equals(id)) {
-        found = item;
-        it.remove();
-        break;
-      }
-    }
-    if (found == null) {
-      found = new Item();
-      found.id = id;
-      found.url = normalized;
-      found.host = hostOf(normalized);
-      found.formats = new ArrayList<>();
-    }
-    if (title != null && !title.trim().isEmpty()) found.title = title.trim();
-    if (found.title == null || found.title.isEmpty()) found.title = found.host;
-    File out = new File(dir, fileStem(found.title) + format.ext);
-    File[] old = dir.listFiles();
-    if (old != null) {
-      for (File f : old) {
-        if (f.getName().endsWith(format.ext) && !f.getName().equals(out.getName())) {
-          f.delete();
-        }
-      }
-    }
-    try (FileOutputStream fos = new FileOutputStream(out)) {
-      fos.write(body);
-    }
-    if (!found.formats.contains(format.id)) found.formats.add(format.id);
-    found.lastFormat = format.id;
-    found.updated = System.currentTimeMillis();
-    items.add(0, found);
-    while (items.size() > 200) {
-      Item drop = items.remove(items.size() - 1);
-      deleteDir(itemDir(drop.id));
-    }
-    writeIndex(items);
-    return found;
+    Map<String, String> meta = metadata(normalized, title);
+    meta.put("lastFormat", format.id);
+    meta.put("warning." + format.id, warning);
+    return item(id, archive.put(id, meta, Collections.singletonMap(format.id, body)));
   }
 
-  synchronized void markOpened(Item item, Format format) {
-    List<Item> items = readIndex();
-    Item found = null;
-    for (Iterator<Item> it = items.iterator(); it.hasNext(); ) {
-      Item cur = it.next();
-      if (cur.id.equals(item.id)) {
-        found = cur;
-        it.remove();
-        break;
+  void saveSnapshot(String url, PageExtractor.Article article) throws Exception {
+    migrate(url);
+    String normalized = normalizeUrl(url);
+    Map<String, String> meta = metadata(normalized, article.title);
+    meta.remove("title");
+    meta.remove("updated");
+    meta.put("sourceUpdated", Long.toString(System.currentTimeMillis()));
+    meta.put("sourceTitle", article.title);
+    meta.put("sourceByline", article.byline);
+    meta.put("sourceUrl", article.sourceUrl.isEmpty() ? url : article.sourceUrl);
+    archive.put(idFor(normalized), meta,
+        Collections.singletonMap("source", article.content.getBytes(StandardCharsets.UTF_8)));
+  }
+
+  PageExtractor.Article snapshot(String url) throws Exception {
+    String id = idFor(normalizeUrl(url));
+    Properties meta = archive.get(id);
+    File source = archive.fileFromRecord(id, meta, "source");
+    if (source == null) return null;
+    return new PageExtractor.Article(meta.getProperty("sourceTitle", ""),
+        meta.getProperty("sourceByline", ""), new String(Files.readAllBytes(source.toPath()), StandardCharsets.UTF_8), meta.getProperty("sourceUrl", url));
+  }
+
+  String warning(Item item, Format format) {
+    try { return archive.get(item.id).getProperty("warning." + format.id, ""); }
+    catch (IOException e) { return "无法读取内容检查结果"; }
+  }
+
+  void markOpened(Item item, Format format) {
+    try {
+      migrate(item.url);
+      Map<String, String> meta = new HashMap<>();
+      meta.put("lastFormat", format.id);
+      meta.put("updated", Long.toString(System.currentTimeMillis()));
+      archive.put(item.id, meta, Collections.emptyMap());
+    } catch (Exception e) { throw new IllegalStateException("无法更新本地记录", e); }
+  }
+
+  void delete(Item item) {
+    try {
+      archive.delete(item.id);
+      File legacy = new File(root, item.id);
+      File[] files = legacy.listFiles();
+      if (files != null) for (File file : files) Files.deleteIfExists(file.toPath());
+      Files.deleteIfExists(legacy.toPath());
+    } catch (IOException e) { throw new UncheckedIOException(e); }
+  }
+
+  private Map<String, String> metadata(String url, String title) {
+    Map<String, String> meta = new HashMap<>();
+    meta.put("url", url);
+    meta.put("host", hostOf(url));
+    if (title != null && !title.trim().isEmpty()) meta.put("title", title.trim());
+    meta.put("updated", Long.toString(System.currentTimeMillis()));
+    return meta;
+  }
+
+  private void migrate(String url) throws Exception {
+    String id = idFor(normalizeUrl(url));
+    if (!archive.get(id).isEmpty()) return;
+    for (Item old : legacyIndex()) {
+      if (!old.id.equals(id)) continue;
+      Map<String, byte[]> blobs = new HashMap<>();
+      for (String formatId : old.formats) {
+        Format format = Format.of(formatId);
+        if (has(old, format)) blobs.put(formatId, Files.readAllBytes(file(old, format).toPath()));
       }
+      Map<String, String> meta = metadata(old.url, old.title);
+      meta.put("updated", Long.toString(old.updated));
+      meta.put("lastFormat", old.lastFormat);
+      archive.put(id, meta, blobs);
+      return;
     }
-    if (found == null) return;
-    found.lastFormat = format.id;
-    found.updated = System.currentTimeMillis();
-    items.add(0, found);
-    writeIndex(items);
   }
 
-  synchronized void delete(Item item) {
-    deleteDir(itemDir(item.id));
-    List<Item> items = readIndex();
-    Iterator<Item> it = items.iterator();
-    while (it.hasNext()) {
-      if (it.next().id.equals(item.id)) it.remove();
-    }
-    writeIndex(items);
-  }
-
-  private File itemDir(String id) {
-    return new File(root, id);
-  }
-
-  private List<Item> readIndex() {
-    List<Item> items = new ArrayList<>();
-    if (!indexFile.isFile()) return items;
-    try (FileInputStream in = new FileInputStream(indexFile)) {
-      byte[] buf = new byte[(int) indexFile.length()];
-      int off = 0;
-      while (off < buf.length) {
-        int n = in.read(buf, off, buf.length - off);
-        if (n < 0) break;
-        off += n;
-      }
-      JSONArray arr = new JSONArray(new String(buf, 0, off, StandardCharsets.UTF_8));
-      for (int i = 0; i < arr.length(); i++) {
-        JSONObject o = arr.getJSONObject(i);
+  private List<Item> legacyIndex() throws IOException {
+    List<Item> result = new ArrayList<>();
+    File index = new File(root, "index.json");
+    if (!index.isFile()) return result;
+    try {
+      JSONArray array = new JSONArray(new String(Files.readAllBytes(index.toPath()), StandardCharsets.UTF_8));
+      for (int i = 0; i < array.length(); i++) {
+        JSONObject o = array.getJSONObject(i);
         Item item = new Item();
         item.id = o.optString("id");
-        item.url = o.optString("url");
-        item.title = o.optString("title");
+        if (!item.id.matches("[0-9a-f]{16}")) continue;
+        item.url = o.optString("url"); item.title = o.optString("title");
         item.host = o.optString("host");
         item.lastFormat = o.optString("lastFormat", Format.EPUB.id);
         item.updated = o.optLong("updated", 0);
-        item.formats = new ArrayList<>();
-        JSONArray f = o.optJSONArray("formats");
-        if (f != null) {
-          for (int j = 0; j < f.length(); j++) item.formats.add(f.getString(j));
-        }
-        if (!item.id.isEmpty()) items.add(item);
+        JSONArray formats = o.optJSONArray("formats");
+        if (formats != null) for (int j = 0; j < formats.length(); j++) item.formats.add(formats.getString(j));
+        result.add(item);
       }
-    } catch (Exception ignored) {
-    }
-    return items;
+      return result;
+    } catch (Exception e) { throw new IOException("旧版保存记录无法读取；原文件未改动", e); }
   }
 
-  private void writeIndex(List<Item> items) {
-    JSONArray arr = new JSONArray();
-    try {
-      for (Item item : items) {
-        JSONObject o = new JSONObject();
-        o.put("id", item.id);
-        o.put("url", item.url);
-        o.put("title", item.title);
-        o.put("host", item.host);
-        o.put("lastFormat", item.lastFormat);
-        o.put("updated", item.updated);
-        JSONArray f = new JSONArray();
-        for (String id : item.formats) f.put(id);
-        o.put("formats", f);
-        arr.put(o);
-      }
-      byte[] data = arr.toString().getBytes(StandardCharsets.UTF_8);
-      try (FileOutputStream fos = new FileOutputStream(indexFile)) {
-        fos.write(data);
-      }
-    } catch (Exception ignored) {
-    }
+  private Item item(String id, Properties meta) {
+    Item item = new Item();
+    item.id = id; item.modern = true;
+    item.url = meta.getProperty("url", "");
+    item.host = meta.getProperty("host", hostOf(item.url));
+    item.title = meta.getProperty("title", meta.getProperty("sourceTitle", item.host));
+    item.lastFormat = meta.getProperty("lastFormat", Format.EPUB.id);
+    try { item.updated = Long.parseLong(meta.getProperty("updated", meta.getProperty("sourceUpdated", "0"))); }
+    catch (NumberFormatException ignored) { item.updated = 0; }
+    for (Format format : Format.ALL) if (meta.containsKey("blob." + format.id)) item.formats.add(format.id);
+    return item;
   }
 
   static String normalizeUrl(String raw) {
@@ -266,17 +261,6 @@ final class Library {
     return s;
   }
 
-  private static void deleteDir(File dir) {
-    File[] files = dir.listFiles();
-    if (files != null) {
-      for (File file : files) {
-        if (file.isDirectory()) deleteDir(file);
-        else file.delete();
-      }
-    }
-    dir.delete();
-  }
-
   static final class Item {
     String id;
     String url;
@@ -284,6 +268,7 @@ final class Library {
     String host;
     String lastFormat;
     long updated;
+    boolean modern;
     List<String> formats = new ArrayList<>();
   }
 }

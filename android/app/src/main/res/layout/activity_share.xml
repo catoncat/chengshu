@@ -30,7 +30,8 @@
         <LinearLayout
             android:id="@+id/rowFormat"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
+            android:minHeight="52dp"
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
@@ -64,7 +65,8 @@
         <LinearLayout
             android:id="@+id/rowDest"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
+            android:minHeight="52dp"
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
@@ -98,7 +100,8 @@
         <LinearLayout
             android:id="@+id/rowHidden"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
+            android:minHeight="52dp"
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
@@ -132,7 +135,8 @@
         <LinearLayout
             android:id="@+id/rowUpdate"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
+            android:minHeight="52dp"
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
@@ -199,13 +203,15 @@
         </ScrollView>
     </LinearLayout>
 
-    <LinearLayout
+    <ScrollView
         android:id="@+id/confirm"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:paddingTop="36dp"
-        android:visibility="gone">
+        android:visibility="gone"
+        android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
 
         <TextView
             android:layout_width="match_parent"
@@ -244,6 +250,24 @@
             android:layout_height="1dp"
             android:background="@color/line" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="20dp"
+            android:text="EPUB 在设备上生成；其他格式需联网打包，会发送提取出的正文。"
+            android:textColor="@color/muted"
+            android:textSize="14sp" />
+
+        <CheckBox
+            android:id="@+id/rememberFormat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:text="记住这次格式，下次直接处理"
+            android:textColor="@color/ink" />
+
         <LinearLayout
             android:id="@+id/confirmFormats"
             android:layout_width="match_parent"
@@ -253,7 +277,8 @@
         <TextView
             android:id="@+id/confirmCancel"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
+            android:minHeight="52dp"
             android:background="?android:attr/selectableItemBackground"
             android:gravity="center_vertical"
             android:paddingLeft="20dp"
@@ -262,6 +287,7 @@
             android:textColor="@color/muted"
             android:textSize="16sp" />
     </LinearLayout>
+    </ScrollView>
 
     <LinearLayout
         android:id="@+id/converting"
@@ -287,5 +313,20 @@
             android:layout_height="24dp"
             android:layout_marginTop="16dp"
             android:indeterminate="true" />
+        <Button
+            android:id="@+id/retry"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:layout_marginTop="20dp"
+            android:text="重试"
+            android:visibility="gone" />
+        <Button
+            android:id="@+id/backToRecent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="回到最近"
+            android:visibility="gone" />
     </LinearLayout>
 </FrameLayout>

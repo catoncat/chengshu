@@ -4,11 +4,20 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
+      - "scripts/test-archive.sh"
+      - "scripts/java/**"
+      - "scripts/chengshu-share.test.mjs"
   pull_request:
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
+      - "scripts/test-archive.sh"
+      - "scripts/java/**"
+      - "scripts/chengshu-share.test.mjs"
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,14 +40,27 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - run: gradle -p android testDebugUnitTest assembleDebug
+      - name: archive and share regression proofs
+        run: |
+          bash scripts/test-archive.sh | tee "$RUNNER_TEMP/archive-proof.log"
+          node --test scripts/chengshu-share.test.mjs | tee "$RUNNER_TEMP/share-proof.log"
+      - run: gradle -p android testDebugUnitTest assembleDebug assemblePreview 2>&1 | tee "$RUNNER_TEMP/android-build.log"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chengshu-preview-apk
+          path: android/app/build/outputs/apk/preview/app-preview.apk
       - name: test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-test-reports
-          path: android/app/build/reports/tests/
-          if-no-files-found: ignore
+          path: |
+            android/app/build/reports/tests/
+            android/app/build/test-results/
+            ${{ runner.temp }}/archive-proof.log
+            ${{ runner.temp }}/share-proof.log
+            ${{ runner.temp }}/android-build.log
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: chengshu-apk

@@ -49,7 +49,7 @@ test("recents relaunch is ignored only via LAUNCHED_FROM_HISTORY", () => {
 });
 
 test("share is one entry then a format picker, not four share targets", () => {
-  assert.match(activity, /showShareConfirm\(pageUrl/);
+  assert.match(activity, /showShareConfirm\(job\.url/);
   assert.match(activity, /startShareConvert/);
   assert.match(flow, /static boolean autoConvertOnShare\(boolean formatAsk\) \{\s*return !formatAsk;/);
   const aliases = (manifest.match(/activity-alias/g) || []).length;
@@ -80,7 +80,7 @@ test("android offers PDF next to EPUB", () => {
   assert.match(manifest, /application\/pdf/);
 });
 
-test("share extracts in a WebView with Defuddle then POSTs HTML to pack", () => {
+test("share extracts with Defuddle, locally compiles EPUB, and POSTs other formats", () => {
   const extractor = fs.readFileSync(
     "android/app/src/main/java/onl/nl0/chengshu/PageExtractor.java",
     "utf8",
@@ -89,7 +89,9 @@ test("share extracts in a WebView with Defuddle then POSTs HTML to pack", () => 
   assert.match(extractor, /defuddle\.js/);
   assert.match(extractor, /new C\(document/);
   assert.match(activity, /PageExtractor\.extract/);
+  assert.match(activity, /LocalEpub\.build/);
   assert.match(activity, /postPack/);
+  assert.doesNotMatch(activity, /getExport|SHARE_FRESH_MS/);
   assert.match(activity, /"html"/);
   assert.equal(fs.existsSync("android/app/src/main/assets/defuddle.js"), true);
 });
@@ -124,3 +126,11 @@ test("e2e corpus covers SPA, wiki, and br-separated essays", () => {
 });
 
 
+
+test("durable capture precedes consuming the share Intent", () => {
+  const capture = activity.indexOf("PendingShares.Job job = inbox.capture");
+  assert.ok(capture >= 0 && capture < activity.indexOf("clearShareIntent(); // Intent consumed"));
+  assert.match(activity, /library\.saveSnapshot/);
+  assert.match(activity, /inbox\.complete\(job\); \/\/ Acknowledgement/);
+  assert.doesNotMatch(library, /items\.size\(\) > 200/);
+});

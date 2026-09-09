@@ -25,11 +25,23 @@
 | Markdown | 笔记、AI |
 | HTML / 纯文本 | 任意能打开的应用 |
 
-手机上先在 WebView 里渲染页面再抽正文（Defuddle），避免空壳 SPA 抓不到字。网站粘贴链接走同一套打包。
+手机上先在 WebView 里渲染页面再抽正文（Defuddle）。Android 的 EPUB 在设备端生成，不把正文发给转换服务器；读取网页和下载图片仍然需要联网。PDF、Markdown、HTML、纯文本仍需把提取正文发给转换接口；网站版本的转换也仍在服务端完成。
+
+保存后的同格式文件优先本地打开；换格式优先复用正文快照，只有明确“重新抓取”才刷新正文。图片失败或超出资源预算会在书内和打开前提示。设备端生成会保留标题层级目录、脚注锚点、表格与列表。
+
+未完成分享保留在“最近”中供继续处理，已保存文件不再按 200 篇自动删除。当前不承诺进程被系统回收后自动后台执行，重开应用可继续。详见 [实现与验收边界](docs/RELIABLE_DELIVERY.md)。
 
 ## 自己编译
 
 Android 工程在 [`android/`](android/)。网站与转换接口是这个仓库的其余部分。
+
+```sh
+bash scripts/test-archive.sh
+node --test scripts/chengshu-share.test.mjs
+gradle -p android testDebugUnitTest assembleDebug assemblePreview
+```
+
+`assemblePreview` 产物使用独立包名 `onl.nl0.chengshu.preview`，可与正式版并存，不覆盖正式版保存内容，也不会更新成正式版。开发分支构建只生成测试附件，不发布官网 APK。
 
 ---
 
