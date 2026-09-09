@@ -24,11 +24,15 @@ final class PageExtractor {
     final String title;
     final String byline;
     final String content;
+    final String sourceUrl;
 
-    Article(String title, String byline, String content) {
+    Article(String title, String byline, String content) { this(title, byline, content, ""); }
+
+    Article(String title, String byline, String content, String sourceUrl) {
       this.title = title == null ? "" : title;
       this.byline = byline == null ? "" : byline;
       this.content = content == null ? "" : content;
+      this.sourceUrl = sourceUrl == null ? "" : sourceUrl;
     }
   }
 
@@ -42,22 +46,31 @@ final class PageExtractor {
   private static final long POLL_MS = 400;
   private static final int SETTLE_NEED = 2;
   private static final int MIN_TEXT = 240;
-  private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
   private static int ticket;
   private static WebView live;
+  private static Handler liveHandler;
 
   private PageExtractor() {}
 
   static void cancel() {
     ticket++;
+    if (liveHandler != null) liveHandler.removeCallbacksAndMessages(null);
+    liveHandler = null;
     destroy(live);
     live = null;
+  }
+
+  static void cancel(Activity owner) {
+    if (live != null && live.getContext() == owner) cancel();
   }
 
   static void extract(Activity activity, String url, Done done) {
     cancel();
     final int mine = ticket;
+    final Handler handler = new Handler(Looper.getMainLooper());
+    liveHandler = handler;
+    final boolean[] delivered = {false};
     final long start = System.currentTimeMillis();
     WebView web = new WebView(activity);
     live = web;
@@ -81,13 +94,16 @@ final class PageExtractor {
     final int[] stable = {0};
     final boolean[] finished = {false};
 
-    Runnable finishNull =
-        () -> {
-          if (mine != ticket) return;
-          destroy(web);
-          if (live == web) live = null;
-          done.onDone(null);
-        };
+    Done complete = article -> {
+      if (mine != ticket || delivered[0]) return;
+      delivered[0] = true;
+      handler.removeCallbacksAndMessages(null);
+      ticket++;
+      destroy(web);
+      if (live == web) { live = null; liveHandler = null; }
+      done.onDone(article);
+    };
+    Runnable finishNull = () -> complete.onDone(null);
 
     Runnable runDefuddle =
         () -> {
@@ -108,9 +124,7 @@ final class PageExtractor {
                     raw -> {
                       if (mine != ticket) return;
                       Article article = parseArticle(raw);
-                      destroy(web);
-                      if (live == web) live = null;
-                      done.onDone(article);
+                      complete.onDone(article);
                     });
               });
         };
@@ -139,7 +153,7 @@ final class PageExtractor {
                     runDefuddle.run();
                     return;
                   }
-                  MAIN.postDelayed(this, POLL_MS);
+                  handler.postDelayed(this, POLL_MS);
                 });
           }
         };
@@ -152,24 +166,26 @@ final class PageExtractor {
             if (loaded == null || loaded.startsWith("about:")) return;
             if (finished[0]) return;
             finished[0] = true;
-            MAIN.postDelayed(poll, 350);
+            handler.postDelayed(poll, 350);
           }
 
           @Override
           public void onReceivedError(
               WebView view, WebResourceRequest req, android.webkit.WebResourceError error) {
             if (mine != ticket) return;
-            if (req != null && req.isForMainFrame()) MAIN.post(finishNull);
+            if (req != null && req.isForMainFrame()) handler.post(finishNull);
           }
         });
 
-    MAIN.postDelayed(
+    handler.postDelayed(
         () -> {
           if (mine != ticket) return;
           if (!finished[0]) runDefuddle.run();
         },
         LIMIT_MS);
 
+    // evaluateJavascript can fail to call back after renderer failure; leave a retryable job.
+    handler.postDelayed(finishNull, LIMIT_MS + 4000);
     web.loadUrl(url);
   }
 
@@ -177,7 +193,7 @@ final class PageExtractor {
       "(function(){var t=(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').trim();return JSON.stringify({len:t.length});})()";
 
   private static final String PARSE =
-      "(function(){try{var C=globalThis.Defuddle;if(C&&C.default)C=C.default;if(typeof C!=='function')return JSON.stringify({ok:false});var r=new C(document,{url:location.href}).parse();var html=r&&r.content?String(r.content):'';var text=html.replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim();if(text.length<80)return JSON.stringify({ok:false});return JSON.stringify({ok:true,title:(r.title||document.title||'').trim(),byline:(r.author||'').trim(),content:html});}catch(e){return JSON.stringify({ok:false});}})()";
+      "(function(){try{var C=globalThis.Defuddle;if(C&&C.default)C=C.default;if(typeof C!=='function')return JSON.stringify({ok:false});var r=new C(document,{url:location.href}).parse();var html=r&&r.content?String(r.content):'';var text=html.replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim();if(text.length<80)return JSON.stringify({ok:false});return JSON.stringify({ok:true,title:(r.title||document.title||'').trim(),byline:(r.author||'').trim(),content:html,url:location.href});}catch(e){return JSON.stringify({ok:false});}})()";
 
   private static Article parseArticle(String raw) {
     try {
@@ -187,7 +203,7 @@ final class PageExtractor {
       if (!o.optBoolean("ok")) return null;
       String content = o.optString("content", "");
       if (content.length() < 80) return null;
-      return new Article(o.optString("title", ""), o.optString("byline", ""), content);
+      return new Article(o.optString("title", ""), o.optString("byline", ""), content, o.optString("url", ""));
     } catch (Exception e) {
       return null;
     }

@@ -15,6 +15,11 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.CheckBox;
+import android.os.Handler;
+import android.os.Looper;
+import java.io.IOException;
+import java.nio.file.Files;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -27,7 +32,6 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,7 +43,21 @@ public class ShareActivity extends Activity {
   private static final String KEY_FORMAT = "format";
   private static final String KEY_READER = "reader_package";
   private static final String ASK = "";
-  private static final long SHARE_FRESH_MS = 45_000;
+  private PendingShares inbox;
+  private PendingShares.Job activeJob;
+  private boolean extracting;
+  private boolean resumed;
+  private long inboxRevision = -1;
+  private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+  private final Runnable refreshPending = new Runnable() {
+    @Override public void run() {
+      if (resumed && home != null && home.getVisibility() == View.VISIBLE
+          && inboxRevision != PendingShares.revision()) {
+        inboxRevision = PendingShares.revision(); refreshHistory();
+      }
+      if (resumed) refreshHandler.postDelayed(this, 1500);
+    }
+  };
 
   private View home;
   private View converting;
@@ -67,6 +85,7 @@ public class ShareActivity extends Activity {
     setContentView(R.layout.activity_share);
     prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
     library = new Library(this);
+    inbox = new PendingShares(new File(getFilesDir(), "pending-shares"));
     migrateLegacy();
     home = findViewById(R.id.home);
     converting = findViewById(R.id.converting);
@@ -88,6 +107,13 @@ public class ShareActivity extends Activity {
     findViewById(R.id.rowHidden).setOnClickListener(v -> pickHidden());
     findViewById(R.id.rowUpdate).setOnClickListener(v -> onUpdateTap());
     findViewById(R.id.confirmCancel).setOnClickListener(v -> cancelShare());
+    findViewById(R.id.retry).setOnClickListener(v -> {
+      if (activeJob != null) startJob(activeJob); else showHome();
+    });
+    findViewById(R.id.backToRecent).setOnClickListener(v -> {
+      activeJob = null;
+      showHome();
+    });
 
     handleIntent(getIntent());
   }
@@ -101,27 +127,65 @@ public class ShareActivity extends Activity {
 
   @Override
   protected void onDestroy() {
-    PageExtractor.cancel();
+    if (extracting && activeJob != null) {
+      PageExtractor.cancel(this);
+      inbox.release(activeJob);
+    }
+    refreshHandler.removeCallbacksAndMessages(null);
     super.onDestroy();
+  }
+
+  @Override protected void onResume() {
+    super.onResume(); resumed = true; inboxRevision = -1;
+    refreshHandler.removeCallbacks(refreshPending);
+    refreshHandler.post(refreshPending);
+  }
+
+  @Override protected void onPause() {
+    resumed = false; refreshHandler.removeCallbacks(refreshPending);
+    super.onPause();
   }
 
   private void handleIntent(Intent intent) {
     String action = intent == null ? null : intent.getAction();
     int flags = intent == null ? 0 : intent.getFlags();
-    if (!ShareFlow.shouldConvertShare(action, flags)) {
-      showHome();
+    if (!ShareFlow.shouldConvertShare(action, flags)) { showHome(); return; }
+    String pageUrl = urlOf(intent);
+    if (pageUrl == null) { showHome(); return; }
+    try {
+      PendingShares.Job job = inbox.capture(Library.normalizeUrl(pageUrl), pageUrl,
+          titleOf(intent), formatIsAsk() ? "" : currentFormat().id, false);
+      clearShareIntent(); // Intent consumed only after durable capture.
+      if (activeJob != null && (extracting || inbox.running(activeJob)
+          || confirm.getVisibility() == View.VISIBLE)) {
+        Toast.makeText(this, "链接已接住，会依次处理", Toast.LENGTH_SHORT).show();
+        return;
+      }
+      startJob(job);
+    } catch (Exception e) { showFailure(null); }
+  }
+
+  private void startJob(PendingShares.Job job) {
+    if (activeJob != null && (extracting || inbox.running(activeJob))) {
+      Toast.makeText(this, "链接已接住，当前文章完成后可以继续", Toast.LENGTH_SHORT).show();
       return;
     }
-    String pageUrl = urlOf(intent);
-    if (pageUrl != null) {
-      if (ShareFlow.autoConvertOnShare(formatIsAsk())) {
-        convertAndOpen(pageUrl, titleOf(intent), currentFormat(), true, false);
-      } else {
-        showShareConfirm(pageUrl, titleOf(intent));
-      }
-    } else {
-      showHome();
+    activeJob = job;
+    if (inbox.running(job)) {
+      Toast.makeText(this, "这篇正在保存，完成后会出现在最近", Toast.LENGTH_LONG).show();
+      activeJob = null; showHome(); return;
     }
+    if (job.format.isEmpty()) showShareConfirm(job.url, job.title);
+    else convertAndOpen(job.url, job.title, Format.of(job.format), true, job.force);
+  }
+
+  private boolean startNextJob() {
+    try {
+      for (PendingShares.Job job : inbox.list()) {
+        if ((activeJob == null || !activeJob.id.equals(job.id)) && job.error.isEmpty() && !inbox.running(job)) { startJob(job); return true; }
+      }
+    } catch (IOException e) { /* Current saved result remains available. */ }
+    return false;
   }
 
   private void migrateLegacy() {
@@ -159,6 +223,7 @@ public class ShareActivity extends Activity {
   private void cancelShare() {
     pendingUrl = null;
     pendingTitle = null;
+    activeJob = null; // Keep the captured link in the retryable inbox.
     clearShareIntent();
     showHome();
   }
@@ -228,7 +293,13 @@ public class ShareActivity extends Activity {
       showHome();
       return;
     }
-    convertAndOpen(pendingUrl, pendingTitle, format, true, false);
+    try {
+      if (((CheckBox) findViewById(R.id.rememberFormat)).isChecked()) {
+        prefs.edit().putString(KEY_FORMAT, format.id).apply();
+      }
+      activeJob = inbox.choose(activeJob, format.id);
+      convertAndOpen(pendingUrl, pendingTitle, format, true, false);
+    } catch (IOException e) { showFailure(activeJob); }
   }
 
   private void refreshPrefs() {
@@ -242,9 +313,34 @@ public class ShareActivity extends Activity {
 
   private void refreshHistory() {
     history.removeAllViews();
-    List<Library.Item> items = library.list();
-    empty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
-    for (Library.Item item : items) history.addView(historyRow(item));
+    try {
+      List<PendingShares.Job> jobs = inbox.list();
+      List<Library.Item> items = library.list();
+      empty.setVisibility(jobs.isEmpty() && items.isEmpty() ? View.VISIBLE : View.GONE);
+      for (PendingShares.Job job : jobs) {
+        TextView row = new TextView(this);
+        String title = job.title.isEmpty() ? Library.hostOf(job.url) : job.title;
+        row.setText(title + "\n" + (inbox.running(job) ? "正在处理" : "未完成 · 点此继续"));
+        row.setTextColor(getColor(R.color.ink)); row.setTextSize(16);
+        row.setPadding(dp(20), dp(16), dp(20), dp(16)); row.setMinHeight(dp(64));
+        row.setBackgroundResource(android.R.drawable.list_selector_background);
+        row.setOnClickListener(v -> startJob(job));
+        row.setOnLongClickListener(v -> {
+          if (inbox.running(job)) return true;
+          new AlertDialog.Builder(this).setMessage("移除这个待处理链接？已保存的文件不会删除。")
+              .setPositiveButton("移除", (d, w) -> {
+                try { inbox.complete(job); refreshHistory(); }
+                catch (IOException e) { Toast.makeText(this, "未能移除，链接仍保留", Toast.LENGTH_LONG).show(); }
+              }).setNegativeButton("保留", null).show();
+          return true;
+        });
+        history.addView(row);
+      }
+      for (Library.Item item : items) history.addView(historyRow(item));
+    } catch (Exception e) {
+      empty.setVisibility(View.VISIBLE);
+      empty.setText("暂时无法读取保存记录。原文件没有被删除，请重新打开应用重试。");
+    }
   }
 
   private View historyRow(Library.Item item) {
@@ -286,13 +382,14 @@ public class ShareActivity extends Activity {
   }
 
   private void itemMenu(Library.Item item) {
-    String[] actions = new String[Format.ALL.length + 3];
+    String[] actions = new String[Format.ALL.length + 4];
     actions[0] = "打开";
     for (int i = 0; i < Format.ALL.length; i++) {
       Format format = Format.ALL[i];
       boolean have = library.has(item, format);
       actions[i + 1] = (have ? "打开 " : "转成 ") + format.title;
     }
+    actions[actions.length - 3] = "分享到其他应用";
     actions[actions.length - 2] = "重新抓取";
     actions[actions.length - 1] = "删除";
     new AlertDialog.Builder(this)
@@ -303,8 +400,10 @@ public class ShareActivity extends Activity {
               if (which == 0) {
                 openItem(item, Format.of(item.lastFormat));
               } else if (which == actions.length - 1) {
-                library.delete(item);
-                refreshHistory();
+                try { library.delete(item); refreshHistory(); }
+                catch (Exception e) { Toast.makeText(this, "删除未完成，原记录仍保留", Toast.LENGTH_LONG).show(); }
+              } else if (which == actions.length - 3) {
+                shareItem(item);
               } else if (which == actions.length - 2) {
                 convertAndOpen(item.url, item.title, Format.of(item.lastFormat), false, true);
               } else {
@@ -312,6 +411,22 @@ public class ShareActivity extends Activity {
               }
             })
         .show();
+  }
+
+  private void shareItem(Library.Item item) {
+    try {
+      Format format = Format.of(item.lastFormat);
+      File file = titledCopy(library.file(item, format), format, item.title);
+      Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
+      Intent send = new Intent(Intent.ACTION_SEND).setType(format.mime);
+      send.putExtra(Intent.EXTRA_STREAM, uri).putExtra(Intent.EXTRA_TITLE, item.title);
+      send.setClipData(ClipData.newRawUri(item.title, uri));
+      send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+      Intent chooser = Intent.createChooser(send, "分享已保存的文件");
+      chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+      chooser.setClipData(send.getClipData());
+      startActivity(chooser);
+    } catch (RuntimeException e) { handoffFailed(); }
   }
 
   private void pickFormat() {
@@ -422,62 +537,136 @@ public class ShareActivity extends Activity {
 
   private void convertAndOpen(
       String pageUrl, String title, Format format, boolean fromShare, boolean force) {
-    Library.Item existing = library.findByUrl(pageUrl);
-    long age = existing == null ? Long.MAX_VALUE : System.currentTimeMillis() - existing.updated;
-    if (!force
-        && existing != null
-        && library.has(existing, format)
-        && age < SHARE_FRESH_MS) {
-      openFile(library.file(existing, format), format, existing.title, fromShare);
-      return;
-    }
-    home.setVisibility(View.GONE);
-    confirm.setVisibility(View.GONE);
-    converting.setVisibility(View.VISIBLE);
-    progress.setVisibility(View.VISIBLE);
-    status.setText(existing == null || force ? "成书中" : "转成 " + format.title);
-    PageExtractor.extract(
-        this,
-        pageUrl,
-        (article) ->
-            new Thread(
-                    () -> {
-                      try {
-                        Downloaded downloaded = download(pageUrl, format, article);
-                        String savedTitle =
-                            downloaded.title != null && !downloaded.title.isEmpty()
-                                ? downloaded.title
-                                : (title == null || title.isEmpty()
-                                    ? Library.hostOf(pageUrl)
-                                    : title);
-                        Library.Item item =
-                            library.save(pageUrl, savedTitle, format, downloaded.body);
-                        runOnUiThread(
-                            () ->
-                                openFile(
-                                    library.file(item, format), format, item.title, fromShare));
-                      } catch (Exception e) {
-                        runOnUiThread(
-                            () -> {
-                              progress.setVisibility(View.GONE);
-                              status.setText(e.getMessage());
-                            });
-                      }
-                    },
-                    "chengshu-convert")
-                .start());
+    try {
+      if (activeJob != null && (extracting || inbox.running(activeJob))) {
+        inbox.capture(Library.normalizeUrl(pageUrl), pageUrl, title, format.id, force);
+        Toast.makeText(this, "链接已接住，会依次处理", Toast.LENGTH_SHORT).show();
+        return;
+      }
+      if (activeJob == null || !activeJob.url.equals(pageUrl) || activeJob.force != force) {
+        activeJob = inbox.capture(Library.normalizeUrl(pageUrl), pageUrl, title, format.id, force);
+      }
+      Library.Item existing = library.findByUrl(pageUrl);
+      if (!force && existing != null && library.has(existing, format)) {
+        if (activeJob != null) inbox.complete(activeJob);
+        activeJob = null;
+        if (!startNextJob()) openSaved(existing, format, fromShare);
+        return;
+      }
+      if (activeJob == null || !activeJob.url.equals(pageUrl) || activeJob.force != force) {
+        activeJob = inbox.capture(Library.normalizeUrl(pageUrl), pageUrl, title, format.id, force);
+      }
+      activeJob = inbox.choose(activeJob, format.id);
+      final PendingShares.Job job = activeJob;
+      if (!inbox.claim(job)) { activeJob = null; showHome(); return; }
+      home.setVisibility(View.GONE); confirm.setVisibility(View.GONE);
+      converting.setVisibility(View.VISIBLE); progress.setVisibility(View.VISIBLE);
+      findViewById(R.id.retry).setVisibility(View.GONE);
+      findViewById(R.id.backToRecent).setVisibility(View.GONE);
+      status.setText("链接已接住，正在读取正文");
+      new Thread(() -> {
+        try {
+          PageExtractor.Article cached = force ? null : library.snapshot(pageUrl);
+          runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing()) { inbox.release(job); return; }
+            if (cached != null) { packJob(job, format, cached, fromShare); return; }
+            extracting = true;
+            PageExtractor.extract(this, pageUrl, article -> {
+              extracting = false;
+              packJob(job, format, article, fromShare);
+            });
+          });
+        } catch (Exception e) { failJob(job); }
+      }, "chengshu-source").start();
+    } catch (Exception e) { showFailure(activeJob); }
+  }
+
+  private void packJob(PendingShares.Job job, Format format, PageExtractor.Article article, boolean fromShare) {
+    if (article == null) { failJob(job); return; }
+    status.setText(format == Format.EPUB ? "正文已提取，正在设备上整理图片和目录" : "正文已提取，正在联网生成 " + format.title);
+    new Thread(() -> {
+      try {
+        library.saveSnapshot(job.url, article);
+        Downloaded downloaded = download(job.url, format, article);
+        String savedTitle = downloaded.title.isEmpty() ? (job.title.isEmpty() ? Library.hostOf(job.url) : job.title) : downloaded.title;
+        Library.Item item = library.save(job.url, savedTitle, format, downloaded.body, downloaded.warning);
+        inbox.complete(job); // Acknowledgement happens only after publication.
+        inbox.release(job);
+        runOnUiThread(() -> {
+          if (isDestroyed() || isFinishing() || activeJob == null || !activeJob.id.equals(job.id)) return;
+          activeJob = null;
+          if (!resumed) { showHome(); return; } // Never steal focus from another application.
+          if (startNextJob()) return;
+          openSaved(item, format, fromShare);
+        });
+      } catch (Exception e) { failJob(job); }
+    }, "chengshu-convert").start();
+  }
+
+  private void failJob(PendingShares.Job job) {
+    try { inbox.fail(job); } catch (IOException ignored) { /* Initial capture remains durable. */ }
+    inbox.release(job);
+    runOnUiThread(() -> {
+      if (!isDestroyed() && !isFinishing() && activeJob != null && activeJob.id.equals(job.id)) {
+        activeJob = job;
+        if (resumed && startNextJob()) return;
+        showFailure(job);
+      }
+    });
+  }
+
+  private void showFailure(PendingShares.Job job) {
+    home.setVisibility(View.GONE); confirm.setVisibility(View.GONE);
+    converting.setVisibility(View.VISIBLE); progress.setVisibility(View.GONE);
+    status.setText(job == null ? "未能保存这个链接。请检查可用空间后重新分享。"
+        : "这次没能完成，链接和已保存的内容仍在。可以重试，或先回到最近。需要登录的网页请先在浏览器确认能阅读正文。");
+    findViewById(R.id.retry).setVisibility(job == null ? View.GONE : View.VISIBLE);
+    findViewById(R.id.backToRecent).setVisibility(View.VISIBLE);
+  }
+
+  private void openSaved(Library.Item item, Format format, boolean fromShare) {
+    String warning = library.warning(item, format);
+    if (warning.isEmpty()) { openSavedFile(item, format, fromShare); return; }
+    showHome();
+    new AlertDialog.Builder(this).setTitle("文件已保存，有内容需要注意").setMessage(warning)
+        .setPositiveButton("继续阅读", (d, w) -> openSavedFile(item, format, fromShare))
+        .setNegativeButton("保留到最近", null)
+        .setNeutralButton("查看原文", (d, w) -> {
+          try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(item.url))); }
+          catch (ActivityNotFoundException e) { Toast.makeText(this, "未找到浏览器", Toast.LENGTH_LONG).show(); }
+        }).show();
+  }
+
+  private void openSavedFile(Library.Item item, Format format, boolean fromShare) {
+    try { openFile(library.file(item, format), format, item.title, fromShare); }
+    catch (RuntimeException e) { handoffFailed(); }
   }
 
   private void openItem(Library.Item item, Format format) {
-    if (library.has(item, format)) {
-      library.markOpened(item, format);
-      openFile(library.file(item, format), format, item.title, false);
-      return;
-    }
-    convertAndOpen(item.url, item.title, format, false, false);
+    try {
+      if (library.has(item, format)) {
+        library.markOpened(item, format);
+        openSaved(item, format, false);
+        return;
+      }
+      convertAndOpen(item.url, item.title, format, false, false);
+    } catch (RuntimeException e) { handoffFailed(); }
   }
 
   private void openFile(File file, Format format, String title, boolean fromShare) {
+    try { openFileUnchecked(file, format, title, fromShare); }
+    catch (RuntimeException e) { handoffFailed(); }
+  }
+
+  private void handoffFailed() {
+    home.setVisibility(View.GONE); confirm.setVisibility(View.GONE);
+    converting.setVisibility(View.VISIBLE); progress.setVisibility(View.GONE);
+    status.setText("文件已保存，但这次没能打开阅读器。回到最近可以重新打开，或长按文章分享到其他应用。");
+    findViewById(R.id.retry).setVisibility(View.GONE);
+    findViewById(R.id.backToRecent).setVisibility(View.VISIBLE);
+  }
+
+  private void openFileUnchecked(File file, Format format, String title, boolean fromShare) {
     File share = titledCopy(file, format, title);
     Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", share);
     grantAll(uri, format.mime);
@@ -496,7 +685,7 @@ public class ShareActivity extends Activity {
       try {
         startActivity(view);
         chooser = false;
-      } catch (ActivityNotFoundException ignored) {
+      } catch (ActivityNotFoundException | SecurityException ignored) {
         prefs.edit().putString(destKey(format), ASK).apply();
         view.setPackage(null);
       }
@@ -515,7 +704,7 @@ public class ShareActivity extends Activity {
         converting.setVisibility(View.VISIBLE);
         home.setVisibility(View.GONE);
         progress.setVisibility(View.GONE);
-        status.setText("没有能打开 " + format.title + " 的应用");
+        handoffFailed();
         return;
       }
     }
@@ -529,23 +718,15 @@ public class ShareActivity extends Activity {
 
   private File titledCopy(File file, Format format, String title) {
     String stem = Library.fileStem(title != null && !title.isEmpty() ? title : stripExt(file.getName()));
-    File dir = new File(getCacheDir(), "out");
+    File dir = new File(new File(getCacheDir(), "out"), Library.idFor(file.getAbsolutePath()));
     if (!dir.isDirectory() && !dir.mkdirs()) return file;
     File out = new File(dir, stem + format.ext);
     try {
-      copyFile(file, out);
+      if (!out.isFile() || out.length() != file.length())
+        LocalArchive.atomicWrite(out, Files.readAllBytes(file.toPath()));
       return out;
     } catch (Exception e) {
       return file;
-    }
-  }
-
-  private static void copyFile(File from, File to) throws Exception {
-    try (FileInputStream in = new FileInputStream(from);
-        FileOutputStream out = new FileOutputStream(to)) {
-      byte[] buf = new byte[16384];
-      int n;
-      while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
     }
   }
 
@@ -556,20 +737,19 @@ public class ShareActivity extends Activity {
 
   private Downloaded download(String pageUrl, Format format, PageExtractor.Article article)
       throws Exception {
-    if (article != null && article.content.length() > 80) {
-      try {
-        return postPack(pageUrl, format, article);
-      } catch (Exception ignored) {
-        /* old server or pack failed — fetch on the server instead */
-      }
+    if (article == null || article.content.isEmpty()) throw new IOException("没有提取到正文");
+    if (format == Format.EPUB) {
+      LocalEpub.Result result = LocalEpub.build(article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl, article.title, article.byline, article.content, EpubImages::load);
+      return new Downloaded(result.bytes, result.title, result.warning);
     }
-    return getExport(pageUrl, format);
+    // Retrying an existing snapshot must not silently replace it with a server re-fetch.
+    return postPack(pageUrl, format, article);
   }
 
   private Downloaded postPack(String pageUrl, Format format, PageExtractor.Article article)
       throws Exception {
     JSONObject payload = new JSONObject();
-    payload.put("url", pageUrl);
+    payload.put("url", article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl);
     payload.put("title", article.title);
     payload.put("byline", article.byline);
     payload.put("html", article.content);
@@ -584,48 +764,33 @@ public class ShareActivity extends Activity {
     conn.setRequestProperty("User-Agent", "Chengshu/" + BuildConfig.VERSION_NAME);
     conn.setRequestProperty("Accept", format.mime + ",*/*");
     conn.setFixedLengthStreamingMode(sent.length);
-    conn.getOutputStream().write(sent);
-    return readDownload(conn, format);
-  }
-
-  private Downloaded getExport(String pageUrl, Format format) throws Exception {
-    String endpoint =
-        API
-            + "?format="
-            + format.id
-            + "&url="
-            + URLEncoder.encode(pageUrl, StandardCharsets.UTF_8.name());
-    HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
-    conn.setConnectTimeout(15000);
-    conn.setReadTimeout(60000);
-    conn.setInstanceFollowRedirects(true);
-    conn.setRequestProperty("User-Agent", "Chengshu/" + BuildConfig.VERSION_NAME);
-    conn.setRequestProperty("Accept", format.mime + ",*/*");
-    return readDownload(conn, format);
+    try {
+      try (java.io.OutputStream out = conn.getOutputStream()) { out.write(sent); }
+      return readDownload(conn, format);
+    } catch (Exception e) { conn.disconnect(); throw e; }
   }
 
   private Downloaded readDownload(HttpURLConnection conn, Format format) throws Exception {
-    int code = conn.getResponseCode();
-    InputStream in = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    byte[] buf = new byte[16384];
-    int n;
-    while (in != null && (n = in.read(buf)) > 0) out.write(buf, 0, n);
-    byte[] body = out.toByteArray();
-    if (code >= 400) {
-      String err = new String(body, StandardCharsets.UTF_8);
-      throw new RuntimeException(err.isEmpty() ? ("HTTP " + code) : err);
-    }
-    if (body.length < 8) throw new RuntimeException("没返回文件");
-    if (format.id.equals("epub") && (body[0] != 'P' || body[1] != 'K')) {
-      throw new RuntimeException("没返回 EPUB");
-    }
-    String header = conn.getHeaderField("X-Title");
-    String title = "";
-    if (header != null && !header.isEmpty()) {
-      title = URLDecoder.decode(header, StandardCharsets.UTF_8.name());
-    }
-    return new Downloaded(body, title);
+    try {
+      int code = conn.getResponseCode();
+      if (code < 200 || code >= 300) throw new IOException("联网生成失败，请稍后重试");
+      if (conn.getContentLengthLong() > 48L * 1024 * 1024) throw new IOException("返回文件过大");
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      try (InputStream in = conn.getInputStream()) {
+        byte[] buf = new byte[16384]; int n;
+        while ((n = in.read(buf)) != -1) {
+          if (out.size() + n > 48 * 1024 * 1024) throw new IOException("返回文件过大");
+          out.write(buf, 0, n);
+        }
+      }
+      byte[] body = out.toByteArray();
+      if (body.length < 8) throw new IOException("没有返回可用文件");
+      if (format == Format.PDF && !(body[0] == '%' && body[1] == 'P' && body[2] == 'D' && body[3] == 'F'))
+        throw new IOException("没有返回 PDF 文件");
+      String header = conn.getHeaderField("X-Title");
+      String title = header == null ? "" : URLDecoder.decode(header, StandardCharsets.UTF_8.name());
+      return new Downloaded(body, title, "");
+    } finally { conn.disconnect(); }
   }
 
   private void grantAll(Uri uri, String mime) {
@@ -684,6 +849,9 @@ public class ShareActivity extends Activity {
   }
 
   private void checkUpdate(boolean toastIfCurrent) {
+    if (BuildConfig.APPLICATION_ID.endsWith(".preview")) {
+      updateValue.setText("试验版 · 与正式版独立"); return;
+    }
     updateValue.setText("…");
     new Thread(
             () -> {
@@ -776,10 +944,12 @@ public class ShareActivity extends Activity {
   private static final class Downloaded {
     final byte[] body;
     final String title;
+    final String warning;
 
-    Downloaded(byte[] body, String title) {
+    Downloaded(byte[] body, String title, String warning) {
       this.body = body;
       this.title = title;
+      this.warning = warning;
     }
   }
 }
