@@ -73,6 +73,28 @@ public class LocalEpubTest {
     String chapter = text(unzip(result.bytes), "OEBPS/chapter.xhtml");
     assertTrue(chapter.contains("图片未保存：步骤二")); assertTrue(chapter.contains(result.warning));
   }
+
+  @Test public void blankImageSourcesStayMissingAndNeverFetchTheArticle() throws Exception {
+    List<String> requested = new ArrayList<>();
+    LocalEpub.Result result = build(
+        "<p>正文</p><img src='ok.png'><img src=''><img src='   '><img data-src='  ' data-original='' alt='空'><img alt='无地址'>",
+        u -> { requested.add(u); return new LocalEpub.Image(PNG, "image/png"); });
+    assertEquals(1, result.embeddedImages);
+    assertEquals(4, result.missingImages);
+    assertEquals(Collections.singletonList("https://example.org/article/ok.png"), requested);
+    assertFalse(requested.contains(URL));
+  }
+
+  @Test public void firstNonBlankLazySourceWinsAndBlanksAreNotThePage() {
+    Document doc = Jsoup.parseBodyFragment("<img src='  ' data-src='folder/a.png' data-original='x.png'>", URL);
+    assertEquals("folder/a.png", LocalEpub.firstImageSource(doc.selectFirst("img")));
+    assertEquals("https://example.org/article/folder/a.png",
+        LocalEpub.resolvedImageUrl("folder/a.png", URL));
+    assertEquals("", LocalEpub.resolvedImageUrl("", URL));
+    assertEquals("", LocalEpub.resolvedImageUrl("   ", URL));
+    assertEquals("data:image/png;base64,xx", LocalEpub.resolvedImageUrl("data:image/png;base64,xx", URL));
+    assertEquals("", LocalEpub.resolvedImageUrl("javascript:alert(1)", URL));
+  }
   @Test public void activeContentAndUnsafeUrlsNeverEnterBook() throws Exception {
     Map<String, byte[]> files = unzip(build("<p onclick='alert(1)'>Safe<script>alert(1)</script>"
         + "<a href='javascript:alert(1)'>bad</a><a href='/good'>good</a></p><iframe src='https://tracker.invalid'></iframe>", u -> null).bytes);

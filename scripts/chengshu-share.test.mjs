@@ -134,3 +134,14 @@ test("durable capture precedes consuming the share Intent", () => {
   assert.match(activity, /inbox\.complete\(job\); \/\/ Acknowledgement/);
   assert.doesNotMatch(library, /items\.size\(\) > 200/);
 });
+
+test("empty image src is not turned into the article URL", () => {
+  const epub = fs.readFileSync(
+    "android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java",
+    "utf8",
+  );
+  assert.match(epub, /static String firstImageSource/);
+  assert.match(epub, /static String resolvedImageUrl/);
+  assert.doesNotMatch(epub, /image\.absUrl\("src"\)/);
+  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 13/);
+});

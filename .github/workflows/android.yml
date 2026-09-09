@@ -7,6 +7,11 @@ on:
       - "scripts/test-archive.sh"
       - "scripts/java/**"
       - "scripts/chengshu-share.test.mjs"
+      - "scripts/android-ci.sh"
+      - "scripts/publish-manifest.mjs"
+      - "scripts/publish-manifest.test.mjs"
+      - "scripts/pipefail-guard.test.mjs"
+      - "package.json"
   pull_request:
     paths:
       - "android/**"
@@ -14,6 +19,11 @@ on:
       - "scripts/test-archive.sh"
       - "scripts/java/**"
       - "scripts/chengshu-share.test.mjs"
+      - "scripts/android-ci.sh"
+      - "scripts/publish-manifest.mjs"
+      - "scripts/publish-manifest.test.mjs"
+      - "scripts/pipefail-guard.test.mjs"
+      - "package.json"
   workflow_dispatch:
 defaults:
   run:
@@ -36,15 +46,15 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: archive and share regression proofs
-        run: |
-          bash scripts/test-archive.sh | tee "$RUNNER_TEMP/archive-proof.log"
-          node --test scripts/chengshu-share.test.mjs | tee "$RUNNER_TEMP/share-proof.log"
-      - run: gradle -p android testDebugUnitTest assembleDebug assemblePreview 2>&1 | tee "$RUNNER_TEMP/android-build.log"
+      - name: proofs, unit tests and APKs
+        run: bash scripts/android-ci.sh
       - uses: actions/upload-artifact@v4
         with:
           name: chengshu-preview-apk
@@ -57,9 +67,7 @@ jobs:
           path: |
             android/app/build/reports/tests/
             android/app/build/test-results/
-            ${{ runner.temp }}/archive-proof.log
-            ${{ runner.temp }}/share-proof.log
-            ${{ runner.temp }}/android-build.log
+            ${{ runner.temp }}/chengshu-ci/
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
@@ -68,23 +76,27 @@ jobs:
       - name: publish apk
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
-          mkdir -p public
-          cp android/app/build/outputs/apk/debug/app-debug.apk public/chengshu.apk
-          python3 - <<'PY'
-          import json, re
-          t = open("android/app/build.gradle.kts").read()
-          code = int(re.search(r"versionCode = (\d+)", t).group(1))
-          name = re.search(r'versionName = "([^"]+)"', t).group(1)
-          json.dump(
-              {"versionCode": code, "versionName": name, "apk": "https://0nl.onl/chengshu.apk"},
-              open("public/app.json", "w"),
-              ensure_ascii=False,
-          )
-          PY
+          set -euo pipefail
+          mkdir -p public/releases
+          decided="$(node scripts/publish-manifest.mjs \
+            --apk android/app/build/outputs/apk/debug/app-debug.apk \
+            --version-file android/app/build.gradle.kts \
+            --out public/app.json \
+            --copy public/chengshu.apk \
+            --release "public/releases/chengshu-$(python3 -c 'import re,sys; print(re.search(r"versionCode = (\d+)", open("android/app/build.gradle.kts").read()).group(1))').apk" \
+            --commit "${GITHUB_SHA}" \
+            --channel stable \
+            --url https://0nl.onl/chengshu.apk)"
+          echo "$decided"
+          action="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["action"])' "$decided")"
+          if [ "$action" != "publish" ]; then
+            echo "manifest not updated: $action"
+            exit 0
+          fi
           git config user.name "chengshu-bot"
           git config user.email "chengshu-bot@users.noreply.github.com"
-          git add public/chengshu.apk public/app.json
+          git add public/chengshu.apk public/app.json public/releases
           git diff --staged --quiet && echo "apk unchanged" && exit 0
-          git commit -m "android: 发布 APK"
+          git commit -m "android: 发布 APK ${GITHUB_SHA:0:7}"
           git pull --rebase origin main
           git push origin HEAD:main

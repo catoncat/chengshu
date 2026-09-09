@@ -29,12 +29,12 @@
 ## 当前已有的验证入口
 
 ```sh
-bash scripts/test-archive.sh
-node --test scripts/chengshu-share.test.mjs
-gradle -p android testDebugUnitTest assembleDebug assemblePreview
+bash scripts/android-ci.sh
+node --test scripts/chengshu-share.test.mjs scripts/publish-manifest.test.mjs scripts/pipefail-guard.test.mjs
+npm test
 ```
 
-基线没有 Gradle Wrapper；不要声称 `./gradlew` 已存在。完整命令、环境、设备验收和发布检查见 `docs/RELEASE_RUNBOOK.md`。`npm test` 在基线引用了缺失文件，不能把它默认当成已经可用的全量门禁；先按计划修正并记录基线问题。
+CI 使用 Java 17 与 Gradle 8.9。基线没有 Gradle Wrapper；不要声称 `./gradlew` 已存在。`npm test` 只跑仓库里实际存在的转换/脚本测试；`check:auth` 在缺少脚手架文件时明确跳过，不当成全绿门禁。完整命令、设备验收和发布检查见 `docs/RELEASE_RUNBOOK.md`。
 
 ## 提交与接续
 
