@@ -1,0 +1,41 @@
+{
+  "checks": [
+    {"test":"initial playable table, not pre-generated outputs","result":"PASS"},
+    {"test":"incompatible drop preserves material","result":"PASS"},
+    {"test":"real pointer drag cleans HTML and preserves original","result":"PASS"},
+    {"test":"actual extracted text excludes sample navigation/advertising","result":"PASS"},
+    {"test":"binding creates a book with the input text","result":"PASS"},
+    {"test":"image pixels yield actual dominant colors","result":"PASS"},
+    {"test":"palette plus book creates a new cover without consuming either","result":"PASS"},
+    {"test":"downloaded EPUB has valid CRC and stored mimetype first","result":"PASS"},
+    {"test":"all EPUB XML parses and cover uses sampled color","result":"PASS"},
+    {"test":"undo removes only last generated item","result":"PASS"},
+    {"test":"redo restores generated cover","result":"PASS"},
+    {"test":"saved recipe contains real operators","result":"PASS"},
+    {"test":"recipe runs on new content","result":"PASS"},
+    {"test":"unknown code cannot be installed as recipe","result":"PASS"},
+    {"test":"known but incompatible recipe is rejected","result":"PASS"},
+    {"test":"storage denial is visibly surfaced","result":"PASS"},
+    {"test":"no external requests or page exceptions","result":"PASS"},
+    {"test":"phone hand stays inside viewport","result":"PASS"},
+    {"test":"phone touch drag creates actual text","result":"PASS"},
+    {"test":"tap alternative works without dragging","result":"PASS"},
+    {"test":"pointer cancellation cleans up ghost","result":"PASS"},
+    {"test":"reduced motion retains conversion","result":"PASS"},
+    {"test":"no horizontal page overflow at 320px","result":"PASS"}
+  ],
+  "limitations": [
+    "HTML rendered with Playwright set_content because file and localhost navigation are blocked in this test environment.",
+    "Actual restart persistence not tested; storage-denial behavior tested.",
+    "EPUB ZIP/XML/content validated; EPUBCheck and real reading apps not run.",
+    "Chromium desktop/touch emulation tested; no physical phone validation."
+  ],
+  "source": {
+    "html_git_blob_sha1": "2334116a8918d09ee3238af5a33b590cb3efc93f",
+    "html_sha256": "b0372f38c80ffe407f65867431b7a477bfd3d0dba685404f3c81f8e50df57d2d",
+    "html_commit": "25bb242a9037c6fc0ce336ec5a5e8da334968692",
+    "run_command": "python verify.py",
+    "runtime": "Python 3.13, Playwright, /usr/bin/chromium",
+    "remote_readback": "GitHub fetch_file returned the same HTML blob SHA as the tested container file."
+  }
+}
