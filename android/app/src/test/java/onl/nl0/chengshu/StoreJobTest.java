@@ -24,6 +24,7 @@ public class StoreJobTest {
       fail("stale owner must not publish");
     } catch (IllegalStateException expected) { }
     assertTrue(articles.visibleArticles().isEmpty());
+    assertEquals(0, articles.store.list("artifacts").size());
   }
 
   @Test public void snapshotThenPackDoesNotNeedActivityAndKeepsReceipt() throws Exception {
@@ -74,6 +75,7 @@ public class StoreJobTest {
       fail();
     } catch (IllegalStateException expected) { }
     assertTrue(articles.visibleArticles().isEmpty());
+    assertEquals(0, articles.store.list("artifacts").size());
   }
 
   @Test public void legacyLibraryMigratesWithoutCopyingAwayTheOriginalBytes() throws Exception {

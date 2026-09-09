@@ -14,6 +14,7 @@ import org.json.JSONObject;
  */
 final class Store {
   private static final Object PROCESS_LOCK = new Object();
+  private int lockDepth;
   private final File root;
   final BlobStore blobs;
 
@@ -26,10 +27,15 @@ final class Store {
 
   <T> T locked(Tx<T> tx) throws Exception {
     synchronized (PROCESS_LOCK) {
+      if (lockDepth > 0) {
+        lockDepth++;
+        try { return tx.run(); } finally { lockDepth--; }
+      }
       Files.createDirectories(root.toPath());
       try (RandomAccessFile raf = new RandomAccessFile(new File(root, ".lock"), "rw");
           FileChannel channel = raf.getChannel(); FileLock ignored = channel.lock()) {
-        return tx.run();
+        lockDepth = 1;
+        try { return tx.run(); } finally { lockDepth = 0; }
       }
     }
   }

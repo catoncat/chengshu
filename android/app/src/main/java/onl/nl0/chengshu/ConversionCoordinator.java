@@ -4,6 +4,7 @@ import java.io.File;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.json.JSONObject;
 
 /**
  * Packs already-saved snapshots without needing a particular Activity instance.
@@ -68,9 +69,11 @@ final class ConversionCoordinator {
         title = result.title;
         quality = QualityReport.evaluate(article.content, 0, 0);
       }
-      String artifactId = articles.publish(article.sourceUrl, title, format, claimed.snapshotId, body, quality);
+      // Blob first, then one catalog transaction that re-checks owner/generation/revision.
+      JSONObject artifact = articles.prepareArtifact(claimed.articleId, title, format, claimed.snapshotId, body, quality);
+      String artifactId = artifact.optString("id");
       String receiptId = "rcpt-" + artifactId;
-      jobs.commit(claimed.id, claimed.ownerToken, claimed.generation, claimed.expectedRevision, artifactId, receiptId);
+      jobs.commit(claimed.id, claimed.ownerToken, claimed.generation, claimed.expectedRevision, artifactId, receiptId, artifact);
       return articles.artifactFile(claimed.articleId, format);
     } catch (UnsupportedOperationException e) {
       throw e;

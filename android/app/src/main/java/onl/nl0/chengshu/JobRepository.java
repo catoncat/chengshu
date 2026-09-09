@@ -124,6 +124,11 @@ final class JobRepository {
 
   Job commit(String jobId, String ownerToken, int expectedGeneration, int expectedRevision,
       String artifactId, String receiptId) throws Exception {
+    return commit(jobId, ownerToken, expectedGeneration, expectedRevision, artifactId, receiptId, null);
+  }
+
+  Job commit(String jobId, String ownerToken, int expectedGeneration, int expectedRevision,
+      String artifactId, String receiptId, JSONObject artifact) throws Exception {
     return store.locked(() -> {
       JSONObject row = store.get("jobs", jobId);
       if (row == null) throw new IllegalStateException("任务不存在");
@@ -137,8 +142,15 @@ final class JobRepository {
       if (article != null && article.optLong("deletedAt") > 0) throw new IllegalStateException("文章已删除");
       if (article != null && article.optInt("revision") != expectedRevision)
         throw new IllegalStateException("旧任务不能覆盖新结果");
-      if (SAVED.equals(row.optString("state")) && !row.optString("receiptId").isEmpty())
-        return new Job(row);
+      if (artifact != null) {
+        store.put("artifacts", artifact.optString("id"), artifact);
+        if (article != null) {
+          String title = artifact.optString("sourceTitle");
+          if (!title.isEmpty()) article.put("title", title);
+          article.put("updatedAt", System.currentTimeMillis());
+          store.put("articles", article.optString("id"), article);
+        }
+      }
       row.put("state", SAVED);
       row.put("receiptId", receiptId);
       row.put("updatedAt", System.currentTimeMillis());

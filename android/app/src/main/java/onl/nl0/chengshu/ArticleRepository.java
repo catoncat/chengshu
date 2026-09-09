@@ -121,6 +121,28 @@ final class ArticleRepository {
     });
   }
 
+  /** Write the blob outside the catalog lock. Cataloging happens only inside JobRepository.commit. */
+  JSONObject prepareArtifact(String articleId, String title, Format format, String snapshotId,
+      byte[] body, QualityReport quality) throws Exception {
+    File blob = store.blobs.put(body);
+    String hash = blob.getName();
+    String artifactId = LocalArchive.digest((articleId + format.id + hash).getBytes(StandardCharsets.UTF_8)).substring(0, 24);
+    JSONObject artifact = new JSONObject();
+    artifact.put("id", artifactId);
+    artifact.put("articleId", articleId);
+    artifact.put("snapshotId", snapshotId == null ? "" : snapshotId);
+    artifact.put("format", format.id);
+    artifact.put("optionsHash", format.id + ":" + PACKAGER);
+    artifact.put("packagerVersion", PACKAGER);
+    artifact.put("blobHash", hash);
+    artifact.put("byteLength", body.length);
+    artifact.put("qualityJson", quality == null ? "" : quality.json().toString());
+    artifact.put("createdAt", System.currentTimeMillis());
+    artifact.put("legacySource", false);
+    artifact.put("sourceTitle", title == null ? "" : title);
+    return artifact;
+  }
+
   File artifactFile(String articleId, Format format) throws Exception {
     return store.locked(() -> {
       JSONObject newest = null;
