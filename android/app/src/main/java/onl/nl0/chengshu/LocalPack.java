@@ -34,7 +34,7 @@ final class LocalPack {
     out.append(title).append("\n");
     if (!byline.isEmpty()) out.append(byline).append("\n");
     out.append(url).append("\n\n");
-    for (Element block : source.select("h1,h2,h3,h4,h5,h6,p,li,pre,blockquote,td,th")) {
+    for (Element block : source.select("h1,h2,h3,h4,h5,h6,p,li,pre,blockquote,td,th,dt,dd,caption")) {
       String t = block.wholeText().replace('\u00a0', ' ').trim();
       if (!t.isEmpty()) out.append(t).append("\n\n");
     }
@@ -78,6 +78,15 @@ final class LocalPack {
         out.append("\n");
       } else if (tag.equals("table")) {
         out.append(e.text()).append("\n\n");
+      } else if (tag.equals("dl")) {
+        walkMd(e, out, depth);
+        out.append("\n");
+      } else if (tag.equals("dt")) {
+        out.append("**").append(escapeMd(e.text())).append("**\n");
+      } else if (tag.equals("dd")) {
+        out.append(": ").append(inlineMd(e)).append("\n\n");
+      } else if (tag.equals("caption")) {
+        out.append("*").append(escapeMd(e.text())).append("*\n\n");
       } else if (tag.equals("img")) {
         String alt = e.attr("alt");
         out.append("![").append(escapeMd(alt.isEmpty() ? "图片" : alt)).append("](").append(e.absUrl("src")).append(")\n\n");
