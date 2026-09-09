@@ -62,11 +62,9 @@ final class LocalEpub {
     int unsupported = source.select("video,audio,iframe,svg,math,canvas").size();
     source.select("script,style,form,iframe,object,embed,video,audio,svg,math,canvas,noscript").remove();
     for (Element image : source.select("img")) {
-      String src = image.attr("src");
-      if (src.isEmpty()) src = image.attr("data-src");
-      if (src.isEmpty()) src = image.attr("data-original");
-      image.attr("src", src);
-      if (!src.startsWith("data:")) image.attr("src", image.absUrl("src"));
+      String src = firstImageSource(image);
+      String resolved = resolvedImageUrl(src, url);
+      image.attr("src", resolved);
     }
     for (Element link : source.select("a[href]")) {
       if (!link.attr("href").startsWith("#")) link.attr("href", link.absUrl("href"));
@@ -267,6 +265,30 @@ final class LocalEpub {
       pool.shutdownNow();
     }
     return resources;
+  }
+
+  static String firstImageSource(Element image) {
+    for (String name : new String[] {"src", "data-src", "data-original"}) {
+      String value = image.attr(name).trim();
+      if (!value.isEmpty()) return value;
+    }
+    return "";
+  }
+
+  static String resolvedImageUrl(String src, String pageUrl) {
+    if (src == null) return "";
+    src = src.trim();
+    if (src.isEmpty()) return "";
+    if (src.regionMatches(true, 0, "data:", 0, 5)) return src;
+    try {
+      URI resolved = URI.create(pageUrl).resolve(src);
+      String scheme = resolved.getScheme();
+      if (scheme == null) return "";
+      if (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) return "";
+      return resolved.toString();
+    } catch (IllegalArgumentException | NullPointerException ignored) {
+      return "";
+    }
   }
 
   static String extension(String mime) {

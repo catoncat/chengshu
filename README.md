@@ -35,13 +35,21 @@
 
 Android 工程在 [`android/`](android/)。网站与转换接口是这个仓库的其余部分。
 
+需要 Java 17 和 Gradle 8.9（CI 通过 `gradle/actions/setup-gradle` 固定该版本，仓库暂不包含 Gradle Wrapper）。Android 测试与 APK：
+
 ```sh
-bash scripts/test-archive.sh
-node --test scripts/chengshu-share.test.mjs
-gradle -p android testDebugUnitTest assembleDebug assemblePreview
+bash scripts/android-ci.sh
 ```
 
-`assemblePreview` 产物使用独立包名 `onl.nl0.chengshu.preview`，可与正式版并存，不覆盖正式版保存内容，也不会更新成正式版。开发分支构建只生成测试附件，不发布官网 APK。
+网站转换单测（只跑仓库里实际存在的文件）：
+
+```sh
+npm test
+```
+
+`assemblePreview` 产物使用独立包名 `onl.nl0.chengshu.preview`，可与正式版并存，不覆盖正式版保存内容，也不会更新成正式版。开发分支构建只生成测试附件，不发布官网 APK。文档改动不会触发 Android 发布作业。
+
+发布到 [0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk) 只发生在 `main` 上、测试通过之后；清单见 [app.json](https://0nl.onl/app.json)。覆盖升级与签名核验步骤见 [docs/RELEASE_RUNBOOK.md](docs/RELEASE_RUNBOOK.md)。
 
 ## 继续开发 / 模型接手
 
