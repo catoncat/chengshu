@@ -43,6 +43,12 @@ gradle -p android testDebugUnitTest assembleDebug assemblePreview
 
 `assemblePreview` 产物使用独立包名 `onl.nl0.chengshu.preview`，可与正式版并存，不覆盖正式版保存内容，也不会更新成正式版。开发分支构建只生成测试附件，不发布官网 APK。
 
+## 继续开发 / 模型接手
+
+从 [开发交接总入口](docs/HANDOFF.md) 开始，接着看 [当前进度与下一任务](docs/STATUS.md)。仓库根目录的 [AGENTS.md](AGENTS.md) 是开发代理的工作入口。
+
+交接文档包含产品规格、技术设计、29 项有依赖和验收条件的实施任务、测试矩阵、发布与升级操作手册，以及可直接交给执行模型的提示词。它是一份后续施工计划，不代表其中所有能力已经上线。默认先修复当前构建失败、验证覆盖升级并交付可用版本，再推进后台恢复、一键使用、阅读质量和性能。
+
 ---
 
 # 成书
