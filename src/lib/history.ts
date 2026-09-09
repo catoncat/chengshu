@@ -1,26 +1,26 @@
 const DB_NAME = "chengshu";
 const STORE = "books";
-const MAX_BOOKS = 12;
+const MAX_BOOKS = 24;
 
 export type StoredBook = {
   id: string;
   title: string;
   sourceUrl: string;
   filename: string;
+  format: string;
+  mime: string;
   createdAt: number;
   size: number;
-  byline: string;
-  siteName: string;
-  excerpt: string;
+  charCount: number;
+  paragraphCount: number;
   blob: Blob;
-  html?: string;
 };
 
 type BookRecord = Omit<StoredBook, "blob"> & { bytes: ArrayBuffer };
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
@@ -32,19 +32,29 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+function guessMime(filename: string, format?: string) {
+  if (format === "pdf" || filename.endsWith(".pdf")) return "application/pdf";
+  if (format === "md" || filename.endsWith(".md")) return "text/markdown; charset=utf-8";
+  if (format === "html" || filename.endsWith(".html")) return "text/html; charset=utf-8";
+  if (format === "txt" || filename.endsWith(".txt")) return "text/plain; charset=utf-8";
+  return "application/epub+zip";
+}
+
 function recordToBook(row: BookRecord): StoredBook {
+  const format = row.format || (row.filename.split(".").pop() || "epub");
+  const mime = row.mime || guessMime(row.filename, format);
   return {
     id: row.id,
     title: row.title,
     sourceUrl: row.sourceUrl,
     filename: row.filename,
+    format,
+    mime,
     createdAt: row.createdAt,
     size: row.size,
-    byline: row.byline,
-    siteName: row.siteName,
-    excerpt: row.excerpt,
-    html: row.html,
-    blob: new Blob([row.bytes], { type: "application/epub+zip" }),
+    charCount: row.charCount || 0,
+    paragraphCount: row.paragraphCount || 0,
+    blob: new Blob([row.bytes], { type: mime.split(";")[0] }),
   };
 }
 
@@ -60,12 +70,12 @@ export async function saveBook(book: StoredBook): Promise<void> {
       title: book.title,
       sourceUrl: book.sourceUrl,
       filename: book.filename,
+      format: book.format,
+      mime: book.mime,
       createdAt: book.createdAt,
       size: book.size,
-      byline: book.byline,
-      siteName: book.siteName,
-      excerpt: book.excerpt,
-      html: book.html,
+      charCount: book.charCount,
+      paragraphCount: book.paragraphCount,
       bytes,
     } satisfies BookRecord);
   });

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SiteHeader } from "@/components/site-header";
+import { Converter } from "@/components/converter";
 
 export const Route = createFileRoute("/en")({
   component: English,
@@ -24,6 +25,7 @@ function English() {
             When you hit a long piece in the phone browser that you actually want to sit with, use the system share sheet and pick 成书. The phone extracts the article; EPUB, Markdown, HTML and plain text are packed on device. PDF still uses the conversion API. The file opens in WeChat Reading, KOReader, or another app.
           </p>
           <p>Once the format and destination are set, it does not need to sit in the background. You only see it in the share sheet.</p>
+          <Converter lang="en" />
           <p>
             Reading long articles in a phone browser is miserable: ads, floating popups, and constant prompts to open an app.
           </p>

@@ -77,6 +77,50 @@ export function blockify(html: string): string {
   return parts.join("\n") || "<p></p>";
 }
 
+export function paragraphCount(html: string): number {
+  return extractBlocks(html).filter((b) => b.kind === "p").length;
+}
+
+export function blocksToMarkdown(blocks: ArticleBlock[]): string {
+  const lines: string[] = [];
+  for (const b of blocks) {
+    if (b.kind === "hr") {
+      lines.push("---");
+      continue;
+    }
+    if (b.kind === "img") {
+      lines.push(`![${b.alt}](${b.src})`);
+      continue;
+    }
+    if (b.kind === "pre") {
+      lines.push("```\n" + b.text.trim() + "\n```");
+      continue;
+    }
+    const text = blockText(b);
+    if (!text) continue;
+    if (b.kind === "h1") lines.push(`# ${text}`);
+    else if (b.kind === "h2") lines.push(`## ${text}`);
+    else if (b.kind === "h3") lines.push(`### ${text}`);
+    else if (b.kind.startsWith("h")) lines.push(`#### ${text}`);
+    else if (b.kind === "li") lines.push(`- ${text}`);
+    else if (b.kind === "blockquote") lines.push(`> ${text}`);
+    else lines.push(text);
+  }
+  return lines.join("\n\n").trim();
+}
+
+export function blocksToText(blocks: ArticleBlock[]): string {
+  return blocks
+    .map((b) => {
+      if (b.kind === "hr") return "——";
+      if (b.kind === "img") return b.alt ? `[图：${b.alt}]` : "";
+      return blockText(b);
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
 export function blockText(block: ArticleBlock): string {
   if (block.kind === "hr") return "";
   if (block.kind === "img") return "";

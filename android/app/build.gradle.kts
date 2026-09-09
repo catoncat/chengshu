@@ -52,4 +52,5 @@ dependencies {
     implementation("org.jsoup:jsoup:1.23.2")
     implementation("androidx.core:core:1.13.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

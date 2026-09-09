@@ -8,7 +8,7 @@
 - 下载：[chengshu.apk](https://0nl.onl/chengshu.apk)
 - English: [0nl.onl/en](https://0nl.onl/en)
 
-装好之后，用当前页面试一次即可。
+装好之后，用当前页面试一次即可。网站上也可以贴链接、贴正文、转本页。当前 Android 版本 **1.13**（发布后覆盖 1.12）。
 
 ## 做什么
 
@@ -20,7 +20,7 @@
 
 | | |
 | --- | --- |
-| EPUB | 微信读书、KOReader |
+| EPUB | 微信读书、KOReader；按小标题分章 |
 | PDF | 跨设备、可重排 |
 | Markdown | 笔记、AI |
 | HTML / 纯文本 | 任意能打开的应用 |

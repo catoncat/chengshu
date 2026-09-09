@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SiteHeader } from "@/components/site-header";
+import { Converter } from "@/components/converter";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -24,6 +25,7 @@ function Home() {
             在手机浏览器里看到想细读的长文，点系统分享，选「成书」。手机上抽出正文，EPUB / Markdown / HTML / 纯文本在设备上生成；PDF 仍走转换接口。文件交给微信读书、KOReader，或系统里别的应用。
           </p>
           <p>选好格式与打开方式后，不需要留在后台，平时只在分享菜单里见。</p>
+          <Converter lang="zh" />
           <p>
             在手机浏览器里看长文很受罪：满屏广告、浮动弹窗，动不动还要跳客户端。
           </p>
