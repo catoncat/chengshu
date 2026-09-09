@@ -5,43 +5,41 @@
 
 ## 1. 现在最重要的结论
 
-**当前执行：R01–R05 第一阶段可用修复版 1.12 / versionCode 13。**
+**用户现在可以下载 1.12（versionCode 13）。** 入口：[0nl.onl/chengshu.apk](https://0nl.onl/chengshu.apk)，清单：[0nl.onl/app.json](https://0nl.onl/app.json)。
 
-R01 已在本分支实现：空/空白图片地址不再解析成文章 URL。R02 已补 `scripts/android-ci.sh` 的 `pipefail`、有效 `npm test` 入口和发布清单脚本测试。R04 发布作业改为先验证再写 `app.json`，旧运行不能覆盖更高 versionCode。R03 真机覆盖安装仍未跑；签名核验等 CI 产物与旧官方 APK 对比。R05 在本分支合并进 main 且公网下载与清单一致后才算完成。
+R01 已在 CI 验证：原先失败的 `failuresProduceVisiblePlaceholdersAndPersistentWarning` 通过，空图片不再被当成文章 URL。R02 的 `android-ci.sh` 带 `pipefail`，测试失败不会再发布。R04 已把 sha256/size/sourceCommit 写入公网清单。R03 真机覆盖安装未跑。R05 公网文件已更新；没有阅读器回执，不能声称“已导入微信读书”。
 
-不要从全量重构、改框架或扩格式开始。
-
-当前代码以 `main` 最新提交为基线继续向前，不回退到交接书中的历史 SHA。
+下一任务按依赖：D01、Q01、S01 可并行；U 系列等 R05 设备证据或接受其 NOT_RUN 后由负责人决定。不要从换框架开始。
 
 ## 2. 当前事实与证据
 
 | 项目 | 已核实的状态 |
 | --- | --- |
 | 文档 PR #2 | 已合并 |
-| 上一轮 Android 构建 | [运行 34327606211](https://github.com/catoncat/chengshu/actions/runs/34327606211) 失败于空图片测试 |
-| 旧官方 APK | 1.11 / code 12，sha256 `dccd503611a4f8aa2cd70fa0086a128bbbfd900a08b9864bf71816dfc8780edc`，与当时 `https://0nl.onl/chengshu.apk` 一致 |
-| 本分支版本 | `1.12 / versionCode 13`，包名仍为 `onl.nl0.chengshu`，签名仍用仓库 stable keystore |
-| 本分支新 APK | 尚未由 CI 构建；不能把本文件更新当成已发布 |
-| 真机覆盖升级 | NOT_RUN：当前环境无授权测试设备 |
-
-旧测试成绩只证明那个源提交上被执行的测试。修复后必须重新运行。
+| 修复 PR #3 | 已合并，`8f01858006288bd9070b792115df2685a51ccedb` |
+| 发布提交 | `ff2518e` `android: 发布 APK 8f01858` |
+| 合并后 Android CI | [运行 34343742760](https://github.com/catoncat/chengshu/actions/runs/34343742760) 成功 |
+| 旧官方 APK 1.11 | sha256 `dccd503611a4f8aa2cd70fa0086a128bbbfd900a08b9864bf71816dfc8780edc` |
+| 现官方 APK 1.12 | sha256 `d4a360804ddf17c959d43fac9f242c1ad98618c0cce0c81e6e526e8d61489e33`，size 2407471，与 app.json 一致 |
+| 公网清单 | versionCode 13，versionName 1.12，channel stable，sourceCommit `8f01858…` |
+| 包名 / 签名 | 仍为 `onl.nl0.chengshu` + 仓库 stable keystore；未换钥匙 |
+| 真机覆盖升级 | NOT_RUN |
+| 微信读书 / KOReader | NOT_RUN |
 
 ## 3. 状态怎么使用
 
-- `TODO`：尚未按该任务完成实现与验证。
-- `IN_PROGRESS`：正在执行。
-- `BLOCKED`：记录具体缺失的权限、环境、外部条件。
-- `DONE`：实现、测试、证据与文档已齐全。
+- `TODO` / `IN_PROGRESS` / `BLOCKED` / `DONE`
+- 没跑的验收不能写成 PASS。R03 设备项未跑，故 R03、R05 不能标成全部完成。
 
 ## 4. 主任务账本
 
 | ID | 任务 | 状态 | 完成提交 / 验证证据 |
 | --- | --- | --- | --- |
-| R01 | 空图片与缺图统计修复 | IN_PROGRESS | 本分支 LocalEpub 规范化空 src；保留原 1 张嵌入/2 张缺失断言；本地已跑 node 回归。Android JUnit 待 CI |
-| R02 | 可重复构建与真实测试入口 | IN_PROGRESS | `scripts/android-ci.sh`、`npm test` 只跑存在的文件、pipefail 守卫测试 |
-| R03 | 旧版覆盖升级与签名核验 | IN_PROGRESS | 旧 APK 已封存；缺真机安装。CI 产物到位后比对包名/versionCode/证书 |
-| R04 | 自动版本与完整发布流水线 | IN_PROGRESS | `scripts/publish-manifest.mjs` 覆盖 skip-older / reuse / publish |
-| R05 | 发布第一个确实能用的修复版 | TODO | 待 main CI 通过并更新 0nl.onl |
+| R01 | 空图片与缺图统计修复 | DONE | PR #3；原 1 张嵌入/2 张缺失断言在 CI 通过；[34343569371](https://github.com/catoncat/chengshu/actions/runs/34343569371) |
+| R02 | 可重复构建与真实测试入口 | DONE | `scripts/android-ci.sh`、`npm test` 只跑存在文件、pipefail 守卫测试 |
+| R03 | 旧版覆盖升级与签名核验 | IN_PROGRESS | 新旧 APK hash/版本已记录且 code 13>12；**真机 install -r 未跑** |
+| R04 | 自动版本与完整发布流水线 | DONE | `publish-manifest.mjs`；公网 app.json 含 sha256/sourceCommit；旧运行不能覆盖更高 code |
+| R05 | 发布第一个确实能用的修复版 | IN_PROGRESS | 用户可从 0nl.onl 下载 1.12；覆盖安装与阅读器导入未验证 |
 | D01 | 固定旧版数据与故障语料 | TODO | — |
 | D02 | 事务元数据目录与无损迁移 | TODO | — |
 | D03 | 版本快照、产物和提交凭据 | TODO | — |
@@ -69,26 +67,31 @@ R01 已在本分支实现：空/空白图片地址不再解析成文章 URL。R0
 
 ## 5. 本轮施工记录
 
-日期 / 任务 ID：2026-09-09 / R01–R04
+日期 / 任务 ID：2026-09-09 / R01–R05
 
-状态：IN_PROGRESS
+状态：公网 1.12 已上线；设备升级证据未完成
 
-工作分支：`release/1.12-usable-fix`
+基线提交 / 实现提交：`8f01858` / 发布 `ff2518e`
 
-本次实际改动：LocalEpub 空图片地址；android-ci pipefail；发布清单脚本；versionCode 13。
+工作分支或 PR：[PR #3](https://github.com/catoncat/chengshu/pull/3) 已合并
 
-实际运行命令：`node --test scripts/chengshu-share.test.mjs scripts/publish-manifest.test.mjs scripts/pipefail-guard.test.mjs`（待填结果）；`gradle -p android testDebugUnitTest` 因本环境无 Gradle/SDK 未跑。
+本次实际改动：LocalEpub 空 src；android-ci pipefail；publish-manifest；versionCode 13
 
-真实设备 / 阅读器 / 产物信息：设备验收未完成。旧官方 APK sha256 见上表。
+实际运行：
+- `node --test scripts/chengshu-share.test.mjs scripts/publish-manifest.test.mjs scripts/pipefail-guard.test.mjs` → 22 pass
+- GitHub `gradle -p android testDebugUnitTest assembleDebug assemblePreview` → [34343742760](https://github.com/catoncat/chengshu/actions/runs/34343742760) success
+- `curl https://0nl.onl/app.json` → 1.12 / 13，sha256 与 APK 一致
 
-未运行的验收项及原因：Android JUnit、assemble、真机覆盖、微信读书/KOReader 导入。
+真实设备 / 阅读器：设备验收未完成
 
-已知限制与风险：仍使用仓库 debug.keystore 作为 stable 签名，长期方案见 S03。
+未运行：`adb install -r`、微信读书/KOReader 打开、低内存、深色模式
 
-下一任务：CI 绿后合并 main，完成 R05 公网下载核验。
+已知限制：仍用仓库 debug.keystore 作 stable 签名（S03）；进程被杀后不自动后台抓页
 
-确实需要用户完成的操作：没有。真机覆盖升级证据若要闭合，需要一台已装 1.11 的测试机，不要求连接 Mac。
+下一任务：D01 或 Q01/S01；R03 若要闭合需要一台已装 1.11 的测试机做覆盖安装
+
+确实需要用户完成的操作：若要验证覆盖升级，在已装 1.11 的手机上打开 App 检查更新或下载 1.12 覆盖安装。不是必须。不要求连接 Mac。
 
 ## 6. 文档交付记录
 
-2026-09-09：文档 PR #2 合并。随后开始 R01–R05 代码施工，不以“写好计划”代替产品完成。
+2026-09-09：文档 PR #2 合并。随后 PR #3 修复空图片并发布 1.12。不以“写好计划”代替产品完成；也不把“已请求打开阅读器”说成已导入。
