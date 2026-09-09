@@ -307,4 +307,7 @@ ACTION_VIEW、ACTION_SEND、系统创建文档是三个适配器；都使用正�
 - 已保存正文之后的打包由 `ConversionCoordinator` 单线程执行器 + 启动对账完成，不引入 WorkManager。原因：当前 AGP/JVM 单测不能初始化 WorkManager ContentProvider。进程被系统杀死后的自动唤醒仍未承诺。
 - 动态网页后台 WebView（B04）结论：不可行，保持 `NEEDS_USER`。
 - 正式签名仍用仓库 stable keystore。S03 不在本版本更换钥匙。
+- 1.15：完成通知走 `ResultsNotifier` 聚合 + `NotificationChannel` `chengshu.results`。只在用户已离开交接界面时发送；拒绝 `POST_NOTIFICATIONS` 不得让保存失败。不引入前台服务。
+- 1.15：官方 EPUBCheck JAR 不打进 APK、不在 CI 默认下载。JVM 门禁用 `EpubInspect`（mimetype/container/OPF/NCX/spine/唯一 id）。官方 EPUBCheck 仍是后续设备/发行包证据，不能把结构门禁说成“已通过 EPUBCheck”。
+- 1.15：备份 ZIP 增加 `chengshu-backup.json`。导入拒绝路径穿越与超大条目；按文件 hash 合并，不同字节不覆盖。无账号/云同步。
 

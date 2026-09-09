@@ -74,6 +74,60 @@ public class LibrarySnapshotTest {
     assertEquals("epub-bytes", new String(Files.readAllBytes(library.file(library.list().get(0), Format.EPUB).toPath()), StandardCharsets.UTF_8));
   }
 
+  @Test public void backupRoundTripRestoresUrlAndSourceOnEmptyLibrary() throws Exception {
+    Library source = new Library(temporary.newFolder());
+    String url = "https://example.org/keep";
+    source.saveSnapshot(url, new PageExtractor.Article("备份篇", "", "<p>snapshot html</p>", url));
+    source.save(url, "备份篇", Format.EPUB, bytes("epub-bytes"));
+    File zip = source.exportBackup(temporary.newFolder());
+    java.util.Set<String> names = new java.util.HashSet<>();
+    try (java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(new FileInputStream(zip))) {
+      java.util.zip.ZipEntry entry;
+      while ((entry = in.getNextEntry()) != null) names.add(entry.getName());
+    }
+    assertTrue(names.contains("chengshu-backup.json"));
+    Library dest = new Library(temporary.newFolder());
+    Library.BackupReport report = dest.importBackup(zip);
+    assertTrue(report.restored >= 1);
+    assertEquals(1, dest.list().size());
+    Library.Item item = dest.findByUrl(url);
+    assertNotNull(item);
+    assertEquals("epub-bytes", new String(Files.readAllBytes(dest.file(item, Format.EPUB).toPath()), StandardCharsets.UTF_8));
+    assertEquals("<p>snapshot html</p>", dest.snapshot(url).content);
+  }
+
+  @Test public void backupImportSkipsIdenticalAndKeepsDifferentLocalBytes() throws Exception {
+    File files = temporary.newFolder();
+    Library library = new Library(files);
+    String url = "https://example.org/keep";
+    library.save(url, "备份篇", Format.EPUB, bytes("epub-bytes"));
+    File zip = library.exportBackup(temporary.newFolder());
+    Library.BackupReport same = library.importBackup(zip);
+    assertEquals(0, same.restored);
+    assertTrue(same.skippedSame >= 1);
+    library.save(url, "备份篇", Format.EPUB, bytes("newer-local"));
+    Library.BackupReport conflict = library.importBackup(zip);
+    assertEquals(0, conflict.restored);
+    assertTrue(conflict.skippedConflict >= 1);
+    assertEquals("newer-local", new String(Files.readAllBytes(
+        library.file(library.findByUrl(url), Format.EPUB).toPath()), StandardCharsets.UTF_8));
+  }
+
+  @Test public void backupRejectsPathTraversalAndLeavesLibraryEmpty() throws Exception {
+    File zipFile = new File(temporary.newFolder(), "evil.zip");
+    try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(new FileOutputStream(zipFile))) {
+      zip.putNextEntry(new java.util.zip.ZipEntry("../evil.epub"));
+      zip.write(bytes("nope"));
+      zip.closeEntry();
+    }
+    Library library = new Library(temporary.newFolder());
+    try {
+      library.importBackup(zipFile);
+      fail();
+    } catch (IOException expected) { }
+    assertTrue(library.list().isEmpty());
+  }
+
   @Test public void backupWithoutBooksFailsWithoutWritingZip() throws Exception {
     File dest = temporary.newFolder();
     Library library = new Library(temporary.newFolder());

@@ -41,6 +41,8 @@ public class LocalEpubTest {
     assertTrue(text(files, "OEBPS/content.opf").contains("version=\"2.0\""));
     assertTrue(text(files, "OEBPS/chapter.xhtml").contains("body title="));
     assertEquals("", result.warning);
+    EpubInspect.Report report = EpubInspect.inspect(result.bytes);
+    assertTrue(report.toString(), report.ok());
   }
   @Test public void nestedContentsAndFootnotesHaveRealTargets() throws Exception {
     Map<String, byte[]> files = unzip(build("<h2 id='起点'>A</h2><h3>B</h3><p id='back'><a href='#注释'>1</a></p>"

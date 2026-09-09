@@ -126,6 +126,11 @@ final class LocalEpub {
         ids.add(id); heading.attr("id", id);
       }
     }
+    for (Element marked : body.select("p[id],li[id],aside[id]")) {
+      String id = marked.id().toLowerCase(java.util.Locale.ROOT);
+      if (id.startsWith("fn") || id.startsWith("note") || id.contains("footnote"))
+        marked.addClass("footnote");
+    }
 
     Map<String, Resource> resources = fetchImages(body, loader);
     int missing = 0, embedded = 0;
@@ -431,6 +436,7 @@ final class LocalEpub {
       + "h1,h2,h3,h4,h5,h6{line-height:1.3;margin:1.2em 0 .6em}p{margin:.7em 0;text-indent:2em;text-align:justify}"
       + "img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;text-indent:0}"
       + "table{max-width:100%;border-collapse:collapse}td,th{border:1px solid;padding:.3em}"
-      + ".meta,.caption,.warning,.missing-image{font-size:.9em;text-indent:0}.caption{text-align:center}"
+      + ".meta,.caption,.warning,.missing-image,.footnote{font-size:.9em;text-indent:0}.caption{text-align:center}"
+      + "sup{font-size:.75em;line-height:0;vertical-align:super}sub{font-size:.75em;line-height:0;vertical-align:sub}"
       + "blockquote{margin:1em;padding-left:1em;border-left:2px solid}blockquote p{text-indent:0}a{color:inherit}";
 }

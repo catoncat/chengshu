@@ -133,34 +133,285 @@ final class Library {
     Files.createDirectories(destDir.toPath());
     File zipFile = new File(destDir, "chengshu-backup.zip");
     int files = 0;
+    JSONObject manifest = new JSONObject();
+    JSONArray itemsJson = new JSONArray();
+    try {
+      manifest.put("version", 1);
+      manifest.put("app", "chengshu");
+      manifest.put("createdAt", System.currentTimeMillis());
+    } catch (Exception e) {
+      throw new IOException("无法写入备份清单", e);
+    }
     try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(new FileOutputStream(zipFile))) {
       for (Item item : list()) {
         String stem = fileStem(item.title);
         String folder = item.id + "/";
+        JSONObject row = new JSONObject();
+        JSONArray filesJson = new JSONArray();
+        try {
+          row.put("id", item.id);
+          row.put("url", item.url == null ? "" : item.url);
+          row.put("title", item.title == null ? "" : item.title);
+          row.put("host", item.host == null ? "" : item.host);
+          row.put("lastFormat", item.lastFormat == null ? "" : item.lastFormat);
+        } catch (Exception e) {
+          throw new IOException("无法写入备份清单", e);
+        }
         for (String formatId : item.formats) {
           Format format = Format.of(formatId);
           File file = file(item, format);
           if (file == null || !file.isFile() || file.length() == 0) continue;
+          byte[] body = Files.readAllBytes(file.toPath());
           zip.putNextEntry(new java.util.zip.ZipEntry(folder + stem + format.ext));
-          Files.copy(file.toPath(), zip);
+          zip.write(body);
           zip.closeEntry();
           files++;
+          try {
+            JSONObject f = new JSONObject();
+            f.put("name", stem + format.ext);
+            f.put("format", format.id);
+            f.put("sha256", LocalArchive.digest(body));
+            filesJson.put(f);
+          } catch (Exception e) {
+            throw new IOException("无法写入备份清单", e);
+          }
         }
         PageExtractor.Article snap = null;
         try { snap = snapshot(item.url); } catch (Exception ignored) { /* still export the books */ }
         if (snap != null && snap.content != null && !snap.content.isEmpty()) {
+          byte[] html = snap.content.getBytes(StandardCharsets.UTF_8);
           zip.putNextEntry(new java.util.zip.ZipEntry(folder + stem + ".source.html"));
-          zip.write(snap.content.getBytes(StandardCharsets.UTF_8));
+          zip.write(html);
           zip.closeEntry();
           files++;
+          try {
+            JSONObject f = new JSONObject();
+            f.put("name", stem + ".source.html");
+            f.put("format", "source");
+            f.put("sha256", LocalArchive.digest(html));
+            filesJson.put(f);
+          } catch (Exception e) {
+            throw new IOException("无法写入备份清单", e);
+          }
+        }
+        try {
+          row.put("files", filesJson);
+          itemsJson.put(row);
+        } catch (Exception e) {
+          throw new IOException("无法写入备份清单", e);
         }
       }
+      try { manifest.put("items", itemsJson); }
+      catch (Exception e) { throw new IOException("无法写入备份清单", e); }
+      zip.putNextEntry(new java.util.zip.ZipEntry("chengshu-backup.json"));
+      zip.write(manifest.toString(2).getBytes(StandardCharsets.UTF_8));
+      zip.closeEntry();
+    } catch (org.json.JSONException e) {
+      Files.deleteIfExists(zipFile.toPath());
+      throw new IOException("无法写入备份清单", e);
     }
     if (files == 0) {
       Files.deleteIfExists(zipFile.toPath());
       throw new IOException("没有可导出的文件");
     }
     return zipFile;
+  }
+
+  static final class BackupReport {
+    int restored;
+    int skippedSame;
+    int skippedConflict;
+    int rejected;
+    String summary() {
+      if (restored == 0 && skippedSame == 0 && skippedConflict == 0)
+        return "没有可恢复的文件";
+      StringBuilder text = new StringBuilder();
+      if (restored > 0) text.append("恢复了 ").append(restored).append(" 个文件");
+      if (skippedSame > 0) {
+        if (text.length() > 0) text.append("，");
+        text.append(skippedSame).append(" 个已有相同内容");
+      }
+      if (skippedConflict > 0) {
+        if (text.length() > 0) text.append("，");
+        text.append(skippedConflict).append(" 个因已有不同版本而跳过");
+      }
+      if (rejected > 0) {
+        if (text.length() > 0) text.append("，");
+        text.append(rejected).append(" 个无法识别");
+      }
+      return text.toString();
+    }
+  }
+
+  BackupReport importBackup(File zipFile) throws IOException {
+    if (zipFile == null || !zipFile.isFile()) throw new IOException("找不到备份文件");
+    validateBackupZip(zipFile);
+    JSONObject manifest = readBackupManifest(zipFile);
+    BackupReport report = new BackupReport();
+    try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(zipFile)) {
+      java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
+      while (entries.hasMoreElements()) {
+        java.util.zip.ZipEntry entry = entries.nextElement();
+        if (entry.isDirectory()) continue;
+        String name = entry.getName().replace('\\', '/');
+        if ("chengshu-backup.json".equals(name)) continue;
+        if (unsafeBackupPath(name)) {
+          report.rejected++;
+          continue;
+        }
+        boolean source = name.endsWith(".source.html");
+        Format format = source ? null : formatOfBackupName(name);
+        if (!source && format == null) {
+          report.rejected++;
+          continue;
+        }
+        int slash = name.indexOf('/');
+        String folder = slash > 0 ? name.substring(0, slash) : "";
+        if (folder.isEmpty()) {
+          report.rejected++;
+          continue;
+        }
+        byte[] body = readBackupEntry(zip, entry, 12 * 1024 * 1024);
+        JSONObject meta = manifestItem(manifest, folder);
+        String url = meta != null ? meta.optString("url") : "";
+        String title = meta != null ? meta.optString("title") : backupStem(name);
+        if (title == null || title.isEmpty()) title = backupStem(name);
+        try {
+          if (source) {
+            PageExtractor.Article existing = url.isEmpty() ? null : snapshot(url);
+            if (existing != null && existing.content != null
+                && java.util.Arrays.equals(existing.content.getBytes(StandardCharsets.UTF_8), body)) {
+              report.skippedSame++;
+              continue;
+            }
+            if (url.isEmpty()) url = "https://0nl.onl/restored/" + folder;
+            saveSnapshot(url, new PageExtractor.Article(title, "",
+                new String(body, StandardCharsets.UTF_8), url));
+            report.restored++;
+            continue;
+          }
+          if (url.isEmpty()) {
+            Item byId = findById(folder);
+            if (byId != null && has(byId, format)) {
+              byte[] have = Files.readAllBytes(file(byId, format).toPath());
+              if (java.util.Arrays.equals(have, body)) report.skippedSame++;
+              else report.skippedConflict++;
+              continue;
+            }
+            restoreDirect(folder, byId != null ? byId.url : "", title, format, body);
+            report.restored++;
+            continue;
+          }
+          Item existing = findByUrl(url);
+          if (existing != null && has(existing, format)) {
+            byte[] have = Files.readAllBytes(file(existing, format).toPath());
+            if (java.util.Arrays.equals(have, body)) report.skippedSame++;
+            else report.skippedConflict++;
+            continue;
+          }
+          save(url, title, format, body);
+          report.restored++;
+        } catch (Exception e) {
+          report.rejected++;
+        }
+      }
+    }
+    if (report.restored + report.skippedSame + report.skippedConflict == 0)
+      throw new IOException("没有可恢复的文件");
+    return report;
+  }
+
+  static boolean unsafeBackupPath(String name) {
+    return EpubInspect.unsafePath(name);
+  }
+
+  private Item findById(String id) {
+    if (id == null || id.isEmpty()) return null;
+    for (Item item : list()) if (id.equals(item.id)) return item;
+    return null;
+  }
+
+  private Item restoreDirect(String id, String url, String title, Format format, byte[] body)
+      throws Exception {
+    Map<String, String> meta = metadata(url == null ? "" : url, title);
+    meta.put("lastFormat", format.id);
+    return item(id, archive.put(id, meta, Collections.singletonMap(format.id, body)));
+  }
+
+  private static void validateBackupZip(File zipFile) throws IOException {
+    try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(zipFile)) {
+      if (zip.size() > 500) throw new IOException("备份文件条目过多");
+      long total = 0;
+      java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
+      while (entries.hasMoreElements()) {
+        java.util.zip.ZipEntry entry = entries.nextElement();
+        String name = entry.getName() == null ? "" : entry.getName().replace('\\', '/');
+        if (unsafeBackupPath(name)) throw new IOException("备份包含不安全的路径");
+        long size = entry.getSize();
+        if (size > 12L * 1024 * 1024) throw new IOException("备份里有过大的文件");
+        if (size > 0) total += size;
+        if (total > 80L * 1024 * 1024) throw new IOException("备份解压后过大");
+      }
+    } catch (java.util.zip.ZipException e) {
+      throw new IOException("无法读取备份文件", e);
+    }
+  }
+
+  private static byte[] readBackupEntry(java.util.zip.ZipFile zip, java.util.zip.ZipEntry entry, int max)
+      throws IOException {
+    long size = entry.getSize();
+    if (size > max) throw new IOException("备份里有过大的文件");
+    try (InputStream in = zip.getInputStream(entry);
+         ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+      byte[] buf = new byte[16384];
+      int n;
+      int total = 0;
+      while ((n = in.read(buf)) >= 0) {
+        total += n;
+        if (total > max) throw new IOException("备份里有过大的文件");
+        out.write(buf, 0, n);
+      }
+      return out.toByteArray();
+    }
+  }
+
+  private static JSONObject readBackupManifest(File zipFile) {
+    try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(zipFile)) {
+      java.util.zip.ZipEntry entry = zip.getEntry("chengshu-backup.json");
+      if (entry == null) return null;
+      byte[] body = readBackupEntry(zip, entry, 1024 * 1024);
+      return new JSONObject(new String(body, StandardCharsets.UTF_8));
+    } catch (Exception ignored) {
+      return null;
+    }
+  }
+
+  private static JSONObject manifestItem(JSONObject manifest, String id) {
+    if (manifest == null || id == null) return null;
+    JSONArray items = manifest.optJSONArray("items");
+    if (items == null) return null;
+    for (int i = 0; i < items.length(); i++) {
+      JSONObject row = items.optJSONObject(i);
+      if (row != null && id.equals(row.optString("id"))) return row;
+    }
+    return null;
+  }
+
+  private static Format formatOfBackupName(String name) {
+    String lower = name.toLowerCase(Locale.ROOT);
+    for (Format format : Format.ALL) {
+      if (lower.endsWith(format.ext)) return format;
+    }
+    return null;
+  }
+
+  private static String backupStem(String name) {
+    String file = name;
+    int slash = name.lastIndexOf('/');
+    if (slash >= 0) file = name.substring(slash + 1);
+    if (file.endsWith(".source.html")) return file.substring(0, file.length() - ".source.html".length());
+    int dot = file.lastIndexOf('.');
+    return dot > 0 ? file.substring(0, dot) : file;
   }
 
   private Map<String, String> metadata(String url, String title) {
