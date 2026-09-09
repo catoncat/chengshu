@@ -146,7 +146,8 @@ final class Library {
           zip.closeEntry();
           files++;
         }
-        PageExtractor.Article snap = snapshot(item.url);
+        PageExtractor.Article snap = null;
+        try { snap = snapshot(item.url); } catch (Exception ignored) { /* still export the books */ }
         if (snap != null && snap.content != null && !snap.content.isEmpty()) {
           zip.putNextEntry(new java.util.zip.ZipEntry(folder + stem + ".source.html"));
           zip.write(snap.content.getBytes(StandardCharsets.UTF_8));
