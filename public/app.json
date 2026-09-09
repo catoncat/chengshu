@@ -1,9 +1,9 @@
 {
-  "versionCode": 17,
-  "versionName": "1.16",
+  "versionCode": 18,
+  "versionName": "1.17",
   "apk": "https://0nl.onl/chengshu.apk",
-  "sourceCommit": "61d323a7c9bb65f2fbda319d8158d8645d27ca90",
-  "sha256": "11fd2c3b3e3a6a2b0e90065d074c2a1d72176374b3c3570c796f5dc04b21bdca",
-  "size": 2451520,
+  "sourceCommit": "37db6e1b85a249761c0359747016fcba7fa6c9ec",
+  "sha256": "1eec89a68e2f9389681d9ac5db9e24edcef820c5c6189b309451a0d61e1a30d3",
+  "size": 2452888,
   "channel": "stable"
 }
