@@ -99,6 +99,28 @@ public class LocalEpubTest {
     assertTrue(text(files, "OEBPS/chapter-3.xhtml").contains("乙"));
     assertTrue(text(files, "OEBPS/chapter-2.xhtml").contains("body title=\"第一节\""));
   }
+  @Test public void twoH3HeadingsSplitWhenThereAreNotTwoH2s() throws Exception {
+    Map<String, byte[]> files = unzip(build("<p>引。</p><h3>甲章</h3><p>甲。</p><h3>乙章</h3><p>乙。</p>", u -> null).bytes);
+    assertNotNull(files.get("OEBPS/chapter-2.xhtml"));
+    assertTrue(text(files, "OEBPS/chapter-2.xhtml").contains("body title=\"甲章\""));
+    assertTrue(text(files, "OEBPS/chapter-3.xhtml").contains("body title=\"乙章\""));
+    assertEquals("h3", LocalEpub.chapterSplitTag("<h3>a</h3><h3>b</h3>"));
+    assertEquals("h2", LocalEpub.chapterSplitTag("<h2>a</h2><h3>x</h3><h2>b</h2><h3>y</h3>"));
+    assertNull(LocalEpub.chapterSplitTag("<h3>only</h3><p>x</p>"));
+  }
+  @Test public void definitionListsAndTableCaptionsSurvive() throws Exception {
+    String html = "<dl><dt>EPUB</dt><dd>电子书容器</dd></dl>"
+        + "<table><caption>对照</caption><tr><th>a</th><td>b</td></tr></table>"
+        + "<blockquote><p>引文</p><cite>出处</cite></blockquote>";
+    Document doc = Jsoup.parse(text(unzip(build(html, u -> null).bytes), "OEBPS/chapter.xhtml"));
+    assertEquals("EPUB", doc.selectFirst("dt").text());
+    assertEquals("电子书容器", doc.selectFirst("dd").text());
+    assertEquals("对照", doc.selectFirst("caption").text());
+    assertEquals("出处", doc.selectFirst("cite").text());
+    String css = text(unzip(build(html, u -> null).bytes), "OEBPS/style.css");
+    assertTrue(css.contains("dt{font-weight:bold"));
+    assertTrue(css.contains("caption{caption-side:top"));
+  }
   @Test public void moreThanTwelveImagesAndDuplicateUrlsAreHandled() throws Exception {
     StringBuilder html = new StringBuilder("<p>Image essay</p>");
     for (int i = 0; i < 16; i++) html.append("<img src='../image").append(i).append(".png'>");
@@ -139,6 +161,16 @@ public class LocalEpubTest {
     assertEquals("", LocalEpub.resolvedImageUrl("   ", URL));
     assertEquals("data:image/png;base64,xx", LocalEpub.resolvedImageUrl("data:image/png;base64,xx", URL));
     assertEquals("", LocalEpub.resolvedImageUrl("javascript:alert(1)", URL));
+    Document placeholder = Jsoup.parseBodyFragment(
+        "<img src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==' data-src='real.png'>",
+        URL);
+    assertEquals("real.png", LocalEpub.firstImageSource(placeholder.selectFirst("img")));
+    Document lazy = Jsoup.parseBodyFragment("<img data-lazy-src='later.jpg'>", URL);
+    assertEquals("later.jpg", LocalEpub.firstImageSource(lazy.selectFirst("img")));
+    Document onlyData = Jsoup.parseBodyFragment("<img src='data:image/png;base64,xx'>", URL);
+    assertEquals("data:image/png;base64,xx", LocalEpub.firstImageSource(onlyData.selectFirst("img")));
+    assertTrue(LocalEpub.isDataUri("data:image/png;base64,xx"));
+    assertFalse(LocalEpub.isDataUri("https://example.org/a.png"));
   }
   @Test public void activeContentAndUnsafeUrlsNeverEnterBook() throws Exception {
     Map<String, byte[]> files = unzip(build("<p onclick='alert(1)'>Safe<script>alert(1)</script>"
@@ -231,6 +263,11 @@ public class LocalEpubTest {
         "<picture><source srcset='other.jpg 2x'/><img src='plain.jpg'></picture>", URL);
     LocalEpub.promotePictureSources(keep);
     assertEquals("plain.jpg", keep.selectFirst("img").attr("src"));
+    Document placeholder = Jsoup.parseBodyFragment(
+        "<picture><source type='image/jpeg' srcset='photo.jpg 800w'/><img src='data:image/gif;base64,xx'></picture>",
+        URL);
+    LocalEpub.promotePictureSources(placeholder);
+    assertEquals("photo.jpg", placeholder.selectFirst("img").attr("src"));
   }
 
   @Test public void pictureSourceImageIsEmbeddedAndResolvedAgainstTheArticle() throws Exception {

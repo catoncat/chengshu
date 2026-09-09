@@ -152,7 +152,7 @@ test("empty image src is not turned into the article URL", () => {
   assert.match(epub, /static String pickSrcset/);
   assert.match(epub, /static boolean sameDocument/);
   assert.doesNotMatch(epub, /image\.absUrl\("src"\)/);
-  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 19/);
+  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 20/);
 });
 
 test("txt markdown and html pack on device; pdf still posts extracted html", () => {
@@ -183,6 +183,9 @@ test("txt markdown and html pack on device; pdf still posts extracted html", () 
   assert.match(activity, /job\.error/);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /addAttributes\("ol", "start"/);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /promotePictureSources/);
+  assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /chapterSplitTag/);
+  assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /data-lazy-src/);
+  assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /isDataUri/);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/Failures.java", "utf8"), /NETWORK_UNAVAILABLE/);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/PendingShares.java", "utf8"), /fail\(Job job, String code\)/);
   assert.match(fs.readFileSync("scripts/test-archive.sh", "utf8"), /Failures\.java/);

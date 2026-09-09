@@ -236,7 +236,11 @@ final class LocalEpub {
   private static List<ChapterDoc> splitChapters(String xhtml, String bookTitle) {
     String source = xhtml == null ? "" : xhtml.trim();
     if (source.isEmpty()) source = "<p></p>";
-    Pattern delim = Pattern.compile("(?i)(<h2\\b[^>]*>[\\s\\S]*?</h2>)");
+    String tag = chapterSplitTag(source);
+    if (tag == null) {
+      return Collections.singletonList(new ChapterDoc("chapter", "chapter.xhtml", bookTitle, source));
+    }
+    Pattern delim = Pattern.compile("(?i)(<" + tag + "\\b[^>]*>[\\s\\S]*?</" + tag + ">)");
     Matcher matcher = delim.matcher(source);
     List<String> pieces = new ArrayList<>();
     int last = 0;
@@ -246,11 +250,6 @@ final class LocalEpub {
       last = matcher.end();
     }
     pieces.add(source.substring(last));
-    int headings = 0;
-    for (int i = 1; i < pieces.size(); i += 2) headings++;
-    if (headings < 2) {
-      return Collections.singletonList(new ChapterDoc("chapter", "chapter.xhtml", bookTitle, source));
-    }
     List<ChapterDoc> chapters = new ArrayList<>();
     String intro = pieces.get(0).trim();
     if (!intro.isEmpty()) {
@@ -265,7 +264,25 @@ final class LocalEpub {
       chapters.add(new ChapterDoc("ch" + (chapters.size() + 1),
           "chapter-" + (chapters.size() + 1) + ".xhtml", headingTitle, (heading + rest).trim()));
     }
+    if (chapters.size() < 2) {
+      return Collections.singletonList(new ChapterDoc("chapter", "chapter.xhtml", bookTitle, source));
+    }
     return chapters;
+  }
+
+  /** WeChat Reading titles spine files from body@title; split on the heading that actually sections the article. */
+  static String chapterSplitTag(String source) {
+    if (source == null) return null;
+    if (countOpenTags(source, "h2") >= 2) return "h2";
+    if (countOpenTags(source, "h3") >= 2) return "h3";
+    return null;
+  }
+
+  static int countOpenTags(String source, String tag) {
+    Matcher matcher = Pattern.compile("(?i)<" + tag + "\\b").matcher(source);
+    int n = 0;
+    while (matcher.find()) n++;
+    return n;
   }
 
   private static Map<String, String> idToFile(List<ChapterDoc> chapters) {
@@ -386,14 +403,31 @@ final class LocalEpub {
     return resources;
   }
 
+  static final String[] IMAGE_SOURCE_ATTRS = {
+      "src", "data-src", "data-original", "data-lazy-src", "data-original-src", "data-actualsrc", "data-url"
+  };
+
   static String firstImageSource(Element image) {
-    for (String name : new String[] {"src", "data-src", "data-original"}) {
+    if (image == null) return "";
+    String dataUri = "";
+    for (String name : IMAGE_SOURCE_ATTRS) {
       String value = image.attr(name).trim();
-      if (!value.isEmpty()) return value;
+      if (value.isEmpty()) continue;
+      if (isDataUri(value)) {
+        if (dataUri.isEmpty()) dataUri = value;
+        continue;
+      }
+      return value;
     }
     String srcset = image.attr("srcset").trim();
     if (srcset.isEmpty()) srcset = image.attr("data-srcset").trim();
-    return pickSrcset(srcset);
+    String picked = pickSrcset(srcset);
+    if (picked != null && !picked.isEmpty()) return picked;
+    return dataUri;
+  }
+
+  static boolean isDataUri(String value) {
+    return value != null && value.regionMatches(true, 0, "data:", 0, 5);
   }
 
   /** Copy the best <source srcset> onto a bare <img> inside <picture>, then unwrap. */
@@ -402,7 +436,8 @@ final class LocalEpub {
     for (Element picture : new ArrayList<>(source.select("picture"))) {
       Element img = picture.selectFirst("img");
       if (img == null) { picture.remove(); continue; }
-      if (firstImageSource(img).isEmpty()) {
+      String current = firstImageSource(img);
+      if (current.isEmpty() || isDataUri(current)) {
         String picked = pickPictureSrcset(picture);
         if (!picked.isEmpty()) img.attr("src", picked);
       }
@@ -560,5 +595,7 @@ final class LocalEpub {
       + "ol,ul{padding-left:1.6em;margin:.7em 0}li{text-indent:0}li p,td p,th p{text-indent:0}"
       + ".meta,.caption,.warning,.missing-image,.footnote{font-size:.9em;text-indent:0}.caption{text-align:center}"
       + "sup{font-size:.75em;line-height:0;vertical-align:super}sub{font-size:.75em;line-height:0;vertical-align:sub}"
-      + "blockquote{margin:1em;padding-left:1em;border-left:2px solid}blockquote p{text-indent:0}a{color:inherit}";
+      + "blockquote{margin:1em;padding-left:1em;border-left:2px solid}blockquote p,blockquote cite{text-indent:0}"
+      + "cite{font-size:.9em}dl{margin:.7em 0}dt{font-weight:bold;text-indent:0}dd{margin:0 0 .5em 1.4em;text-indent:0}"
+      + "caption{caption-side:top;text-align:center;font-size:.9em;text-indent:0}a{color:inherit}";
 }
