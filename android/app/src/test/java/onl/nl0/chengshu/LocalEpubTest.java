@@ -86,6 +86,7 @@ public class LocalEpubTest {
   }
 
   @Test public void firstNonBlankLazySourceWinsAndBlanksAreNotThePage() {
+    Document doc = Jsoup.parseBodyFragment("<img src='  ' data-src='folder/a.png' data-original='x.png'>", URL);
     assertEquals("folder/a.png", LocalEpub.firstImageSource(doc.selectFirst("img")));
     assertEquals("https://example.org/article/folder/a.png",
         LocalEpub.resolvedImageUrl("folder/a.png", URL));
