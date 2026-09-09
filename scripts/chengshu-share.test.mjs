@@ -184,6 +184,7 @@ test("txt markdown and html pack on device; pdf still posts extracted html", () 
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /promotePictureSources/);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/Failures.java", "utf8"), /NETWORK_UNAVAILABLE/);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/PendingShares.java", "utf8"), /fail\(Job job, String code\)/);
+  assert.match(fs.readFileSync("scripts/test-archive.sh", "utf8"), /Failures\.java/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /tryExample/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /rowBackup/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /rowRestore/);

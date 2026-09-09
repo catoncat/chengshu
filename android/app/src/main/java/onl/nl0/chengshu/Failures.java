@@ -38,16 +38,6 @@ final class Failures {
     return CONVERSION;
   }
 
-  static String fromQuality(QualityReport report) {
-    if (report == null) return CONVERSION;
-    for (QualityReport.Issue issue : report.issues) {
-      if (!"error".equals(issue.severity)) continue;
-      if (AUTH.equals(issue.code)) return AUTH;
-      if (EMPTY.equals(issue.code)) return EMPTY;
-    }
-    return CONVERSION;
-  }
-
   static String message(String code) {
     if (NETWORK.equals(code)) return "等待网络。连上网后点重试即可，已保存的书还在。";
     if (TIMEOUT.equals(code)) return "这一页读得太慢，没有保存新文件。可以重试，或先查看原文。";

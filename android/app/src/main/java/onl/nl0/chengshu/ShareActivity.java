@@ -842,7 +842,7 @@ public class ShareActivity extends Activity {
   private void packJob(PendingShares.Job job, Format format, PageExtractor.Article article, boolean fromShare) {
     if (article == null) { failJob(job, Failures.TIMEOUT); return; }
     QualityReport gate = QualityReport.evaluate(article.content, 0, 0);
-    if (gate.blocking()) { failJob(job, Failures.fromQuality(gate)); return; }
+    if (gate.blocking()) { failJob(job, gate.failureCode()); return; }
     status.setText(format == Format.EPUB ? "正文已提取，正在设备上整理图片和目录" : "正文已提取，正在联网生成 " + format.title);
     new Thread(() -> {
       try {

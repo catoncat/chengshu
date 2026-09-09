@@ -107,7 +107,7 @@ public class StoreJobTest {
     assertEquals(Failures.NETWORK, Failures.code(new java.io.InterruptedIOException()));
     assertEquals(Failures.STORAGE, Failures.code(new java.io.IOException("No space left on device")));
     assertEquals(Failures.EMPTY, Failures.code(new java.io.IOException("没有提取到可阅读的正文")));
-    assertEquals(Failures.AUTH, Failures.fromQuality(QualityReport.evaluate("<p>请登录 后继续阅读</p>", 0, 0)));
+    assertEquals(Failures.AUTH, QualityReport.evaluate("<p>请登录 后继续阅读</p>", 0, 0).failureCode());
     assertTrue(Failures.message(Failures.NETWORK).contains("等待网络"));
     assertTrue(Failures.attention(Failures.AUTH).contains("浏览器"));
   }
