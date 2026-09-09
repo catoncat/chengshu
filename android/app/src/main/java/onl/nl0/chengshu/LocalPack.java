@@ -42,7 +42,7 @@ final class LocalPack {
     return body.isEmpty() ? source.body().wholeText() : body;
   }
 
-  private static String markdown(String title, String byline, String url, Element source) {
+  private static String markdown(String title, String byline, String url, Document source) {
     StringBuilder out = new StringBuilder();
     out.append("# ").append(escapeMd(title)).append("\n\n");
     if (!byline.isEmpty()) out.append("*").append(escapeMd(byline)).append("*\n\n");
