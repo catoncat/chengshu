@@ -76,7 +76,13 @@ final class LocalEpub {
       image.attr("src", resolved);
     }
     for (Element link : source.select("a[href]")) {
-      if (!link.attr("href").startsWith("#")) link.attr("href", link.absUrl("href"));
+      String href = link.attr("href");
+      if (href.startsWith("#")) continue;
+      String abs = link.absUrl("href");
+      String target = abs.isEmpty() ? href : abs;
+      String fragment = fragmentOf(target);
+      if (fragment != null && sameDocument(url, target)) link.attr("href", "#" + fragment);
+      else if (!abs.isEmpty()) link.attr("href", abs);
     }
     for (Element e : source.select("figure,section,article,main")) e.tagName("div");
     for (Element e : source.select("figcaption")) e.tagName("p").addClass("caption");
@@ -384,7 +390,41 @@ final class LocalEpub {
       String value = image.attr(name).trim();
       if (!value.isEmpty()) return value;
     }
-    return "";
+    String srcset = image.attr("srcset").trim();
+    if (srcset.isEmpty()) srcset = image.attr("data-srcset").trim();
+    return pickSrcset(srcset);
+  }
+
+  static String pickSrcset(String srcset) {
+    if (srcset == null) return "";
+    srcset = srcset.trim();
+    if (srcset.isEmpty()) return "";
+    String best = "";
+    double bestScore = -1;
+    for (String part : srcset.split(",")) {
+      String item = part.trim();
+      if (item.isEmpty()) continue;
+      int space = -1;
+      for (int i = 0; i < item.length(); i++) {
+        char c = item.charAt(i);
+        if (c == ' ' || c == '\t') { space = i; break; }
+      }
+      String candidate = space < 0 ? item : item.substring(0, space).trim();
+      String descriptor = space < 0 ? "" : item.substring(space).trim();
+      if (candidate.isEmpty()) continue;
+      double score = 1;
+      if (descriptor.endsWith("w") || descriptor.endsWith("x")) {
+        try {
+          double n = Double.parseDouble(descriptor.substring(0, descriptor.length() - 1));
+          score = descriptor.endsWith("w") ? n : n * 10_000;
+        } catch (NumberFormatException ignored) { /* keep default score */ }
+      }
+      if (score >= bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    return best;
   }
 
   static String resolvedImageUrl(String src, String pageUrl) {
@@ -401,6 +441,49 @@ final class LocalEpub {
     } catch (IllegalArgumentException | NullPointerException ignored) {
       return "";
     }
+  }
+
+  static boolean sameDocument(String pageUrl, String linkUrl) {
+    try {
+      URI page = URI.create(stripFragment(pageUrl));
+      URI link = URI.create(stripFragment(linkUrl));
+      if (page.getScheme() == null || link.getScheme() == null) return false;
+      if (!page.getScheme().equalsIgnoreCase(link.getScheme())) return false;
+      String pageHost = page.getHost() == null ? "" : page.getHost();
+      String linkHost = link.getHost() == null ? "" : link.getHost();
+      if (!pageHost.equalsIgnoreCase(linkHost)) return false;
+      int pagePort = page.getPort() == -1 ? defaultPort(page.getScheme()) : page.getPort();
+      int linkPort = link.getPort() == -1 ? defaultPort(link.getScheme()) : link.getPort();
+      if (pagePort != linkPort) return false;
+      return normalizePath(page.getPath()).equals(normalizePath(link.getPath()));
+    } catch (IllegalArgumentException e) {
+      return false;
+    }
+  }
+
+  private static int defaultPort(String scheme) {
+    if ("https".equalsIgnoreCase(scheme)) return 443;
+    if ("http".equalsIgnoreCase(scheme)) return 80;
+    return -1;
+  }
+
+  static String normalizePath(String path) {
+    if (path == null || path.isEmpty()) return "/";
+    if (path.length() > 1 && path.endsWith("/")) return path.substring(0, path.length() - 1);
+    return path;
+  }
+
+  static String fragmentOf(String url) {
+    if (url == null) return null;
+    int hash = url.indexOf('#');
+    if (hash < 0 || hash == url.length() - 1) return null;
+    return url.substring(hash + 1);
+  }
+
+  static String stripFragment(String url) {
+    if (url == null) return "";
+    int hash = url.indexOf('#');
+    return hash < 0 ? url : url.substring(0, hash);
   }
 
   static String extension(String mime) {

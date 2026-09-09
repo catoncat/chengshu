@@ -198,4 +198,51 @@ public class LocalEpubTest {
     assertEquals(2, doc.select("ul > li > ol > li").size());
     assertEquals(2, doc.select("ul > li").size());
   }
+
+  @Test public void srcsetPicksLargestCandidateWhenSrcIsBlank() {
+    Document width = Jsoup.parseBodyFragment(
+        "<img src='  ' srcset='small.png 320w, large.png 1280w, medium.png 640w'>", URL);
+    assertEquals("large.png", LocalEpub.firstImageSource(width.selectFirst("img")));
+    Document density = Jsoup.parseBodyFragment("<img srcset='a.png 1x, b.png 2x'>", URL);
+    assertEquals("b.png", LocalEpub.firstImageSource(density.selectFirst("img")));
+    Document lazy = Jsoup.parseBodyFragment("<img data-srcset='lazy.png 1x'>", URL);
+    assertEquals("lazy.png", LocalEpub.firstImageSource(lazy.selectFirst("img")));
+    Document preferSrc = Jsoup.parseBodyFragment(
+        "<img src='plain.png' srcset='big.png 2x'>", URL);
+    assertEquals("plain.png", LocalEpub.firstImageSource(preferSrc.selectFirst("img")));
+    assertEquals("only.png", LocalEpub.pickSrcset("only.png"));
+    assertEquals("", LocalEpub.pickSrcset("  "));
+  }
+
+  @Test public void srcsetImageIsEmbeddedAndResolvedAgainstTheArticle() throws Exception {
+    List<String> requested = new ArrayList<>();
+    LocalEpub.Result result = build(
+        "<p>图</p><img srcset='wide.png 1280w, tiny.png 80w' alt='宽图'>",
+        u -> { requested.add(u); return new LocalEpub.Image(PNG, "image/png"); });
+    assertEquals(Collections.singletonList("https://example.org/article/wide.png"), requested);
+    assertEquals(1, result.embeddedImages);
+    assertEquals(0, result.missingImages);
+  }
+
+  @Test public void samePageAbsoluteAnchorsBecomeInBookJumps() throws Exception {
+    assertTrue(LocalEpub.sameDocument(URL, "https://example.org/article/index.html#注释"));
+    assertTrue(LocalEpub.sameDocument(URL, "https://example.org/article/index.html/#note-1"));
+    assertFalse(LocalEpub.sameDocument(URL, "https://evil.example/article/index.html#note-1"));
+    assertFalse(LocalEpub.sameDocument(URL, "https://example.org/else#note-1"));
+    assertEquals("注释", LocalEpub.fragmentOf("https://example.org/article/index.html#注释"));
+
+    String html = "<h2>第一节</h2><p id='back'><a href='https://example.org/article/index.html#注释'>1</a></p>"
+        + "<h2>第二节</h2><p id='注释'>脚注 <a href='/article/index.html#back'>back</a></p>"
+        + "<p><a href='https://evil.example/phish#注释'>站外</a></p>"
+        + "<p><a href='https://example.org/else#back'>它页</a></p>";
+    Map<String, byte[]> files = unzip(build(html, u -> null).bytes);
+    String ch1 = text(files, "OEBPS/chapter-1.xhtml");
+    String ch2 = text(files, "OEBPS/chapter-2.xhtml");
+    assertTrue(ch1.contains("chapter-2.xhtml#"));
+    assertTrue(ch2.contains("chapter-1.xhtml#back"));
+    assertFalse(ch1.contains("https://example.org/article/index.html#"));
+    assertFalse(ch2.contains("https://example.org/article/index.html#"));
+    assertTrue(ch2.contains("https://evil.example/phish#"));
+    assertTrue(ch2.contains("https://example.org/else#back"));
+  }
 }

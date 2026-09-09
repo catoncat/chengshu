@@ -149,8 +149,10 @@ test("empty image src is not turned into the article URL", () => {
   );
   assert.match(epub, /static String firstImageSource/);
   assert.match(epub, /static String resolvedImageUrl/);
+  assert.match(epub, /static String pickSrcset/);
+  assert.match(epub, /static boolean sameDocument/);
   assert.doesNotMatch(epub, /image\.absUrl\("src"\)/);
-  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 17/);
+  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 18/);
 });
 
 test("txt markdown and html pack on device; pdf still posts extracted html", () => {
