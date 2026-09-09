@@ -250,8 +250,64 @@
 
         <View
             android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginLeft="20dp"
+            android:background="@color/line" />
+
+        <LinearLayout
+            android:id="@+id/rowRestore"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="52dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:contentDescription="从 ZIP 备份恢复，不覆盖已有不同版本">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="导入备份"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/restoreValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="不覆盖"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
             android:layout_height="8dp"
             android:background="@color/row" />
+
+        <TextView
+            android:id="@+id/attentionHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="4dp"
+            android:text="需要注意"
+            android:textColor="@color/muted"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/attention"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
 
         <TextView
             android:layout_width="match_parent"
@@ -341,7 +397,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:padding="20dp"
-            android:text="EPUB 在设备上生成；其他格式需联网打包，会发送提取出的正文。"
+            android:text="EPUB、Markdown、HTML、纯文本在设备上生成；PDF 需联网打包，会发送提取出的正文。"
             android:textColor="@color/muted"
             android:textSize="14sp" />
 

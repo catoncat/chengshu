@@ -43,6 +43,7 @@ public class ShareActivity extends Activity {
   private static final String KEY_FORMAT = "format";
   private static final String KEY_READER = "reader_package";
   private static final String ASK = "";
+  private static final int REQ_BACKUP = 72;
   private PendingShares inbox;
   private PendingShares.Job activeJob;
   private boolean extracting;
@@ -63,8 +64,10 @@ public class ShareActivity extends Activity {
   private View converting;
   private View confirm;
   private LinearLayout history;
+  private LinearLayout attention;
   private LinearLayout confirmFormats;
   private TextView empty;
+  private TextView attentionHeader;
   private TextView formatValue;
   private TextView destValue;
   private TextView hiddenValue;
@@ -77,6 +80,7 @@ public class ShareActivity extends Activity {
   private Library library;
   private ArticleRepository articles;
   private ConversionCoordinator coordinator;
+  private ResultsNotifier results;
   private Update.Info pendingUpdate;
   private String pendingUrl;
   private String pendingTitle;
@@ -88,6 +92,7 @@ public class ShareActivity extends Activity {
     prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
     library = new Library(this);
     articles = new ArticleRepository(new File(getFilesDir(), "chengshu-db"));
+    results = new ResultsNotifier(notice -> ChengshuNotify.show(ShareActivity.this, notice));
     coordinator = new ConversionCoordinator(articles);
     inbox = new PendingShares(new File(getFilesDir(), "pending-shares"));
     migrateLegacy();
@@ -96,6 +101,8 @@ public class ShareActivity extends Activity {
     converting = findViewById(R.id.converting);
     confirm = findViewById(R.id.confirm);
     history = findViewById(R.id.history);
+    attention = findViewById(R.id.attention);
+    attentionHeader = findViewById(R.id.attentionHeader);
     confirmFormats = findViewById(R.id.confirmFormats);
     empty = findViewById(R.id.empty);
     formatValue = findViewById(R.id.formatValue);
@@ -113,6 +120,8 @@ public class ShareActivity extends Activity {
     findViewById(R.id.rowUpdate).setOnClickListener(v -> onUpdateTap());
     View rowBackup = findViewById(R.id.rowBackup);
     if (rowBackup != null) rowBackup.setOnClickListener(v -> exportBackup());
+    View rowRestore = findViewById(R.id.rowRestore);
+    if (rowRestore != null) rowRestore.setOnClickListener(v -> pickBackup());
     findViewById(R.id.confirmCancel).setOnClickListener(v -> cancelShare());
     findViewById(R.id.retry).setOnClickListener(v -> {
       if (activeJob != null) startJob(activeJob); else showHome();
@@ -148,6 +157,8 @@ public class ShareActivity extends Activity {
 
   @Override protected void onResume() {
     super.onResume(); resumed = true; inboxRevision = -1;
+    ChengshuNotify.cancel(this);
+    if (results != null) results.clear();
     refreshHandler.removeCallbacks(refreshPending);
     refreshHandler.post(refreshPending);
   }
@@ -160,7 +171,17 @@ public class ShareActivity extends Activity {
   private void handleIntent(Intent intent) {
     String action = intent == null ? null : intent.getAction();
     int flags = intent == null ? 0 : intent.getFlags();
-    if (!ShareFlow.shouldConvertShare(action, flags)) { showHome(); return; }
+    if (!ShareFlow.shouldConvertShare(action, flags)) {
+      showHome();
+      if ((flags & ShareFlow.FLAG_LAUNCHED_FROM_HISTORY) == 0) {
+        String openId = ChengshuNotify.itemIdOf(intent);
+        if (!openId.isEmpty()) {
+          openSavedById(openId);
+          clearShareIntent();
+        }
+      }
+      return;
+    }
     String pageUrl = urlOf(intent);
     if (pageUrl == null) { showHome(); return; }
     try {
@@ -373,14 +394,21 @@ public class ShareActivity extends Activity {
 
   private void refreshHistory() {
     history.removeAllViews();
+    if (attention != null) attention.removeAllViews();
     try {
       List<PendingShares.Job> jobs = inbox.list();
       List<Library.Item> items = library.list();
       empty.setVisibility(jobs.isEmpty() && items.isEmpty() ? View.VISIBLE : View.GONE);
+      if (attentionHeader != null)
+        attentionHeader.setVisibility(jobs.isEmpty() ? View.GONE : View.VISIBLE);
       for (PendingShares.Job job : jobs) {
         TextView row = new TextView(this);
         String title = job.title.isEmpty() ? Library.hostOf(job.url) : job.title;
-        row.setText(title + "\n" + (inbox.running(job) ? "正在处理" : "未完成 · 点此继续"));
+        String state;
+        if (inbox.running(job)) state = "正在处理";
+        else if (job.error != null && !job.error.isEmpty()) state = "这次没能完成 · 点此重试";
+        else state = "未完成 · 点此继续";
+        row.setText(title + "\n" + state);
         row.setTextColor(getColor(R.color.ink)); row.setTextSize(16);
         row.setPadding(dp(20), dp(16), dp(20), dp(16)); row.setMinHeight(dp(64));
         row.setBackgroundResource(android.R.drawable.list_selector_background);
@@ -394,7 +422,7 @@ public class ShareActivity extends Activity {
               }).setNegativeButton("保留", null).show();
           return true;
         });
-        history.addView(row);
+        (attention != null ? attention : history).addView(row);
       }
       for (Library.Item item : items) history.addView(historyRow(item));
     } catch (Exception e) {
@@ -498,6 +526,53 @@ public class ShareActivity extends Activity {
             Toast.LENGTH_LONG).show());
       }
     }, "chengshu-backup").start();
+  }
+
+  private void pickBackup() {
+    Intent open = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    open.addCategory(Intent.CATEGORY_OPENABLE);
+    open.setType("application/zip");
+    try {
+      startActivityForResult(open, REQ_BACKUP);
+    } catch (ActivityNotFoundException e) {
+      Toast.makeText(this, "没有可用的文件选择器", Toast.LENGTH_LONG).show();
+    }
+  }
+
+  @Override
+  protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode != REQ_BACKUP || resultCode != RESULT_OK || data == null || data.getData() == null)
+      return;
+    Uri uri = data.getData();
+    Toast.makeText(this, "正在恢复备份…", Toast.LENGTH_SHORT).show();
+    new Thread(() -> {
+      try {
+        File tmp = new File(getCacheDir(), "backup-in.zip");
+        try (InputStream in = getContentResolver().openInputStream(uri);
+             FileOutputStream out = new FileOutputStream(tmp)) {
+          if (in == null) throw new IOException("无法读取备份");
+          byte[] buf = new byte[16384];
+          int n;
+          long total = 0;
+          while ((n = in.read(buf)) >= 0) {
+            total += n;
+            if (total > 80L * 1024 * 1024) throw new IOException("备份文件过大");
+            out.write(buf, 0, n);
+          }
+        }
+        Library.BackupReport report = library.importBackup(tmp);
+        runOnUiThread(() -> {
+          refreshHistory();
+          Toast.makeText(this, report.summary(), Toast.LENGTH_LONG).show();
+        });
+      } catch (Exception e) {
+        String message = e.getMessage();
+        runOnUiThread(() -> Toast.makeText(this,
+            message == null || message.isEmpty() ? "没能恢复这个备份，已有文章未改动" : message,
+            Toast.LENGTH_LONG).show());
+      }
+    }, "chengshu-restore").start();
   }
 
   private void shareItem(Library.Item item) {
@@ -651,6 +726,7 @@ public class ShareActivity extends Activity {
       findViewById(R.id.retry).setVisibility(View.GONE);
       findViewById(R.id.backToRecent).setVisibility(View.GONE);
       status.setText("链接已接住，正在读取正文");
+      ChengshuNotify.requestIfNeeded(this);
       new Thread(() -> {
         try {
           PageExtractor.Article cached = force ? null : library.snapshot(pageUrl);
@@ -681,9 +757,12 @@ public class ShareActivity extends Activity {
         inbox.complete(job); // Acknowledgement happens only after publication.
         inbox.release(job);
         runOnUiThread(() -> {
-          if (isDestroyed() || isFinishing() || activeJob == null || !activeJob.id.equals(job.id)) return;
-          activeJob = null;
-          if (!resumed) { showHome(); return; } // Never steal focus from another application.
+          if (activeJob != null && activeJob.id.equals(job.id)) activeJob = null;
+          if (!resumed || isDestroyed() || isFinishing()) {
+            results.saved(item.title, format.id, item.id);
+            if (!isDestroyed() && !isFinishing()) showHome();
+            return;
+          }
           if (startNextJob()) return;
           openSaved(item, format, fromShare);
         });
@@ -695,9 +774,16 @@ public class ShareActivity extends Activity {
     try { inbox.fail(job); } catch (IOException ignored) { /* Initial capture remains durable. */ }
     inbox.release(job);
     runOnUiThread(() -> {
-      if (!isDestroyed() && !isFinishing() && activeJob != null && activeJob.id.equals(job.id)) {
+      if (!resumed || isDestroyed() || isFinishing()) {
+        String title = job == null || job.title.isEmpty()
+            ? (job == null ? "这篇" : Library.hostOf(job.url)) : job.title;
+        results.failed(title, "FAILED");
+        if (!isDestroyed() && !isFinishing()) showHome();
+        return;
+      }
+      if (activeJob != null && activeJob.id.equals(job.id)) {
         activeJob = job;
-        if (resumed && startNextJob()) return;
+        if (startNextJob()) return;
         showFailure(job);
       }
     });
@@ -739,6 +825,16 @@ public class ShareActivity extends Activity {
       }
       convertAndOpen(item.url, item.title, format, false, false);
     } catch (RuntimeException e) { handoffFailed(); }
+  }
+
+  private void openSavedById(String id) {
+    if (id == null || id.isEmpty()) return;
+    for (Library.Item item : library.list()) {
+      if (id.equals(item.id)) {
+        openItem(item, Format.of(item.lastFormat));
+        return;
+      }
+    }
   }
 
   private void openFile(File file, Format format, String title, boolean fromShare) {

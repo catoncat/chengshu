@@ -18,6 +18,7 @@ final class ConversionCoordinator {
 
   private final ArticleRepository articles;
   private final JobRepository jobs;
+  private final ResultsNotifier results;
   private final ExecutorService pool = Executors.newSingleThreadExecutor(r -> {
     Thread t = new Thread(r, "chengshu-pack");
     t.setDaemon(true);
@@ -25,9 +26,15 @@ final class ConversionCoordinator {
   });
 
   ConversionCoordinator(ArticleRepository articles) {
+    this(articles, ResultsNotifier.NOOP);
+  }
+
+  ConversionCoordinator(ArticleRepository articles, ResultsNotifier results) {
     this.articles = articles;
     this.jobs = articles.jobs;
+    this.results = results == null ? ResultsNotifier.NOOP : results;
   }
+
 
   JobRepository.Job enqueueSavedSnapshot(String url, String format, PageExtractor.Article article) throws Exception {
     String articleId = articles.ensureArticle(url, article.title);
@@ -74,6 +81,7 @@ final class ConversionCoordinator {
       String artifactId = artifact.optString("id");
       String receiptId = "rcpt-" + artifactId;
       jobs.commit(claimed.id, claimed.ownerToken, claimed.generation, claimed.expectedRevision, artifactId, receiptId, artifact);
+      results.saved(title, format.id, claimed.articleId);
       return articles.artifactFile(claimed.articleId, format);
     } catch (UnsupportedOperationException e) {
       throw e;
@@ -81,6 +89,7 @@ final class ConversionCoordinator {
       throw e;
     } catch (Exception e) {
       jobs.fail(claimed.id, claimed.ownerToken, "CONVERSION_FAILED", true);
+      results.failed(article.title, "CONVERSION_FAILED");
       throw e;
     }
   }

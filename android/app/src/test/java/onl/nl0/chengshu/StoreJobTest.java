@@ -4,6 +4,8 @@ import static org.junit.Assert.*;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -129,5 +131,32 @@ public class StoreJobTest {
     String text = new String(md.bytes, StandardCharsets.UTF_8);
     assertTrue(text.contains("为什么要本地保存"));
     assertTrue(text.contains("```"));
+    EpubInspect.Report report = EpubInspect.inspect(epub.bytes);
+    assertTrue(report.toString(), report.ok());
+  }
+
+  @Test public void notifierAggregatesThreeSavesAndCoordinatorNotifiesOnce() throws Exception {
+    ResultsNotifier.Notice three = ResultsNotifier.summarize(java.util.Arrays.asList(
+        new ResultsNotifier.Event("saved", "甲", "epub", "1"),
+        new ResultsNotifier.Event("saved", "乙", "epub", "2"),
+        new ResultsNotifier.Event("saved", "丙", "epub", "3")));
+    assertEquals("3 篇文章已保存", three.title);
+    assertEquals("", three.itemId);
+    ResultsNotifier.Notice mixed = ResultsNotifier.summarize(java.util.Arrays.asList(
+        new ResultsNotifier.Event("saved", "甲", "epub", "1"),
+        new ResultsNotifier.Event("failed", "乙", "FAILED", "")));
+    assertEquals("mixed", mixed.kind);
+    List<ResultsNotifier.Notice> notices = new ArrayList<>();
+    ResultsNotifier notifier = new ResultsNotifier(notices::add);
+    ArticleRepository articles = new ArticleRepository(temporary.newFolder());
+    String url = "https://example.org/note-notify";
+    PageExtractor.Article article = new PageExtractor.Article("通知篇", "", "<p>hello world content for notify</p>", url);
+    ConversionCoordinator coordinator = new ConversionCoordinator(articles, notifier);
+    JobRepository.Job job = coordinator.enqueueSavedSnapshot(url, "txt", article);
+    coordinator.runInline(job, article, u -> null);
+    assertEquals(1, notices.size());
+    assertEquals("saved", notices.get(0).kind);
+    coordinator.runInline(articles.jobs.get(job.id), article, u -> { fail("must not rebuild"); return null; });
+    assertEquals(1, notices.size());
   }
 }

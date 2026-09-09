@@ -150,7 +150,7 @@ test("empty image src is not turned into the article URL", () => {
   assert.match(epub, /static String firstImageSource/);
   assert.match(epub, /static String resolvedImageUrl/);
   assert.doesNotMatch(epub, /image\.absUrl\("src"\)/);
-  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 15/);
+  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 16/);
 });
 
 test("txt markdown and html pack on device; pdf still posts extracted html", () => {
@@ -163,8 +163,18 @@ test("txt markdown and html pack on device; pdf still posts extracted html", () 
   assert.match(activity, /postPack/);
   assert.match(activity, /runExample/);
   assert.match(activity, /exportBackup/);
+  assert.match(activity, /importBackup/);
+  assert.match(activity, /pickBackup/);
+  assert.match(activity, /ChengshuNotify\.show/);
+  assert.match(activity, /!resumed \|\| isDestroyed/);
+  assert.match(activity, /attentionHeader/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /tryExample/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /rowBackup/);
+  assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /rowRestore/);
+  assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /attentionHeader/);
+  assert.match(fs.readFileSync("android/app/src/main/AndroidManifest.xml", "utf8"), /POST_NOTIFICATIONS/);
+  assert.equal(fs.existsSync("android/app/src/main/java/onl/nl0/chengshu/ResultsNotifier.java"), true);
+  assert.equal(fs.existsSync("android/app/src/main/java/onl/nl0/chengshu/EpubInspect.java"), true);
   assert.equal(fs.existsSync("android/app/src/main/assets/example-article.html"), true);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/Update.java", "utf8"), /sha256/);
 });
