@@ -1,1 +1,9 @@
-{"versionCode": 12, "versionName": "1.11", "apk": "https://0nl.onl/chengshu.apk"}
+{
+  "versionCode": 13,
+  "versionName": "1.12",
+  "apk": "https://0nl.onl/chengshu.apk",
+  "sourceCommit": "8f01858006288bd9070b792115df2685a51ccedb",
+  "sha256": "d4a360804ddf17c959d43fac9f242c1ad98618c0cce0c81e6e526e8d61489e33",
+  "size": 2407471,
+  "channel": "stable"
+}
