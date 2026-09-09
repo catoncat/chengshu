@@ -21,9 +21,7 @@ function Home() {
       <main className="mx-auto max-w-[744px] px-5 pt-10 pb-24 text-muted-foreground sm:px-8 sm:pt-14">
         <article className="max-w-[600px] leading-[1.75] [&_p+p]:mt-[1.5em] [&_ul]:mt-[1.5em]">
           <p className="text-foreground">
-            在手机浏览器里看到想细读的长文，点系统分享，选「成书」。它会自动抓取网页正文，转成
-            EPUB、PDF、Markdown 或纯文本，直接唤起微信读书、KOReader
-            等应用，或者转成 Markdown 交给 AI 整理。
+            在手机浏览器里看到想细读的长文，点系统分享，选「成书」。手机上抽出正文，EPUB / Markdown / HTML / 纯文本在设备上生成；PDF 仍走转换接口。文件交给微信读书、KOReader，或系统里别的应用。
           </p>
           <p>选好格式与打开方式后，不需要留在后台，平时只在分享菜单里见。</p>
           <p>
@@ -44,7 +42,7 @@ function Home() {
           <p>这个小工具做的事很简单：</p>
           <ul className="list-disc space-y-2 pl-5">
             <li>挂在系统分享菜单里；</li>
-            <li>接过网址，剥离正文，排成 EPUB、PDF、Markdown 或纯文本；</li>
+            <li>接过网址，在手机里抽出正文；EPUB 和文本在本地打包，PDF 仍需联网；</li>
             <li>
               直接把文件传给系统里任意支持的应用打开——既可以是阅读器，也可以交给
               AI 提炼。

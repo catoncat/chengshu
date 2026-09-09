@@ -1,43 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createHash } from "node:crypto";
 import {
   convertToFile,
   parseExportFormat,
   type ConvertRequest,
   type ExportFormat,
 } from "@/lib/convert/pipeline.server";
-
-type Cached = { bytes: Buffer; filename: string; mime: string; title: string; at: number };
-
-const CACHE = new Map<string, Cached>();
-const TTL_MS = 45 * 1000;
-const MAX_ENTRIES = 32;
-
-function cacheKey(format: ExportFormat, body: ConvertRequest) {
-  if (body.html?.trim()) {
-    const h = createHash("sha1").update(body.html).digest("hex").slice(0, 16);
-    return `${format}:html:${h}:${body.url?.trim() || ""}`;
-  }
-  return `${format}:${body.url?.trim() || `text:${body.title ?? ""}:${(body.text ?? "").slice(0, 120)}`}`;
-}
-
-function take(key: string): Cached | undefined {
-  const hit = CACHE.get(key);
-  if (!hit) return undefined;
-  if (Date.now() - hit.at > TTL_MS) {
-    CACHE.delete(key);
-    return undefined;
-  }
-  return hit;
-}
-
-function put(key: string, value: Cached) {
-  CACHE.set(key, value);
-  if (CACHE.size <= MAX_ENTRIES) return;
-  const oldest = CACHE.keys().next().value;
-  if (oldest) CACHE.delete(oldest);
-}
-
+import { cacheKey, take, put } from "@/lib/convert/export-cache";
 function disposition(filename: string) {
   const encoded = encodeURIComponent(filename);
   const ext = (filename.match(/\.[A-Za-z0-9]+$/) || [""])[0];

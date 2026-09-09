@@ -300,3 +300,11 @@ ACTION_VIEW、ACTION_SEND、系统创建文档是三个适配器；都使用正�
 | ADR-08 | 正式签名变更单独评审，不隐式破坏更新 | 真实旧包、新包、各受支持系统的升级验证 |
 
 修改决策时记录：日期、原因、被替代方案、受影响任务、迁移与验证。没有性能/兼容证据时，不使用“理论上更先进”作为理由。
+
+## 13. 2026-09-09 决策记录
+
+- 元数据目录用文件 JSON + FileLock（`Store`），不在 1.13 接入 SQLiteOpenHelper。原因：现有 JVM 真实进程测试无法打开 Android SQLite；原子文件与 `LocalArchive` 同一套崩溃窗口。
+- 已保存正文之后的打包由 `ConversionCoordinator` 单线程执行器 + 启动对账完成，不引入 WorkManager。原因：当前 AGP/JVM 单测不能初始化 WorkManager ContentProvider。进程被系统杀死后的自动唤醒仍未承诺。
+- 动态网页后台 WebView（B04）结论：不可行，保持 `NEEDS_USER`。
+- 正式签名仍用仓库 stable keystore。S03 不在本版本更换钥匙。
+

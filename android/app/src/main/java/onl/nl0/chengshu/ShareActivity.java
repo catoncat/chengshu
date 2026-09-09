@@ -75,6 +75,8 @@ public class ShareActivity extends Activity {
   private ProgressBar progress;
   private SharedPreferences prefs;
   private Library library;
+  private ArticleRepository articles;
+  private ConversionCoordinator coordinator;
   private Update.Info pendingUpdate;
   private String pendingUrl;
   private String pendingTitle;
@@ -85,8 +87,11 @@ public class ShareActivity extends Activity {
     setContentView(R.layout.activity_share);
     prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
     library = new Library(this);
+    articles = new ArticleRepository(new File(getFilesDir(), "chengshu-db"));
+    coordinator = new ConversionCoordinator(articles);
     inbox = new PendingShares(new File(getFilesDir(), "pending-shares"));
     migrateLegacy();
+    try { articles.importLegacy(library); } catch (Exception ignored) { /* keep the old vault readable */ }
     home = findViewById(R.id.home);
     converting = findViewById(R.id.converting);
     confirm = findViewById(R.id.confirm);
@@ -110,6 +115,10 @@ public class ShareActivity extends Activity {
     findViewById(R.id.retry).setOnClickListener(v -> {
       if (activeJob != null) startJob(activeJob); else showHome();
     });
+    View tryExample = findViewById(R.id.tryExample);
+    if (tryExample != null) tryExample.setOnClickListener(v -> runExample());
+    View pasteLink = findViewById(R.id.pasteLink);
+    if (pasteLink != null) pasteLink.setOnClickListener(v -> pasteLink());
     findViewById(R.id.backToRecent).setOnClickListener(v -> {
       activeJob = null;
       showHome();
@@ -226,6 +235,55 @@ public class ShareActivity extends Activity {
     activeJob = null; // Keep the captured link in the retryable inbox.
     clearShareIntent();
     showHome();
+  }
+
+  private void runExample() {
+    new Thread(() -> {
+      try {
+        String html;
+        try (InputStream in = getAssets().open("example-article.html")) {
+          ByteArrayOutputStream out = new ByteArrayOutputStream();
+          byte[] buf = new byte[4096];
+          int n;
+          while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+          html = new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }
+        PageExtractor.Article article = new PageExtractor.Article(
+            "成书示例：把一篇文章做成书", "", html, "https://0nl.onl/example");
+        Downloaded downloaded = download(article.sourceUrl, Format.EPUB, article);
+        Library.Item item = library.save(article.sourceUrl, downloaded.title, Format.EPUB, downloaded.body, downloaded.warning);
+        runOnUiThread(() -> openSaved(item, Format.EPUB, false));
+      } catch (Exception e) {
+        runOnUiThread(() -> Toast.makeText(this, "示例没能保存。请检查可用空间。", Toast.LENGTH_LONG).show());
+      }
+    }, "chengshu-example").start();
+  }
+
+  private void pasteLink() {
+    android.widget.EditText input = new android.widget.EditText(this);
+    input.setHint("https://");
+    input.setInputType(android.text.InputType.TYPE_TEXT_VARIATION_URI);
+    new AlertDialog.Builder(this)
+        .setTitle("粘贴链接")
+        .setMessage("只在你点这一下之后才读取剪贴板。")
+        .setView(input)
+        .setPositiveButton("读取剪贴板", (d, w) -> {
+          android.content.ClipboardManager clipboard =
+              (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+          CharSequence clip = clipboard != null && clipboard.hasPrimaryClip()
+              ? clipboard.getPrimaryClip().getItemAt(0).coerceToText(this) : "";
+          input.setText(clip);
+        })
+        .setNeutralButton("成书", (d, w) -> {
+          String url = input.getText() == null ? "" : input.getText().toString().trim();
+          if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            Toast.makeText(this, "请输入 http 或 https 链接", Toast.LENGTH_LONG).show();
+            return;
+          }
+          showShareConfirm(url, "");
+        })
+        .setNegativeButton("取消", null)
+        .show();
   }
 
   private void showShareConfirm(String pageUrl, String title) {
@@ -587,6 +645,7 @@ public class ShareActivity extends Activity {
     new Thread(() -> {
       try {
         library.saveSnapshot(job.url, article);
+        try { articles.saveSnapshot(job.url, article); } catch (Exception ignored) { /* vault remains source of truth if catalog fails */ }
         Downloaded downloaded = download(job.url, format, article);
         String savedTitle = downloaded.title.isEmpty() ? (job.title.isEmpty() ? Library.hostOf(job.url) : job.title) : downloaded.title;
         Library.Item item = library.save(job.url, savedTitle, format, downloaded.body, downloaded.warning);
@@ -742,7 +801,11 @@ public class ShareActivity extends Activity {
       LocalEpub.Result result = LocalEpub.build(article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl, article.title, article.byline, article.content, EpubImages::load);
       return new Downloaded(result.bytes, result.title, result.warning);
     }
-    // Retrying an existing snapshot must not silently replace it with a server re-fetch.
+    if (format == Format.TXT || format == Format.MD || format == Format.HTML) {
+      LocalPack.Result result = LocalPack.build(format, article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl, article.title, article.byline, article.content);
+      return new Downloaded(result.bytes, result.title, result.warning);
+    }
+    // PDF still goes to the conversion server with already-extracted HTML.
     return postPack(pageUrl, format, article);
   }
 
@@ -901,16 +964,7 @@ public class ShareActivity extends Activity {
     new Thread(
             () -> {
               try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(info.apk).openConnection();
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(60000);
-                InputStream in = conn.getInputStream();
-                File apk = new File(getCacheDir(), "update.apk");
-                try (FileOutputStream fos = new FileOutputStream(apk)) {
-                  byte[] buf = new byte[16384];
-                  int n;
-                  while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
-                }
+                File apk = Update.download(info, new File(getCacheDir(), "update.apk"), BuildConfig.VERSION_CODE);
                 Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", apk);
                 Intent view = new Intent(Intent.ACTION_VIEW);
                 view.setDataAndType(uri, "application/vnd.android.package-archive");

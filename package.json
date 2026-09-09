@@ -16,7 +16,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node -e \"console.error('check:auth skipped: scripts/check-auth-invariant.mjs is not in this repository'); process.exit(0)\"",
-    "test": "node --test scripts/chengshu-share.test.mjs scripts/publish-manifest.test.mjs scripts/pipefail-guard.test.mjs && node --experimental-strip-types --test src/lib/convert/epub-pack.test.ts src/lib/convert/json-article.test.ts src/lib/convert/pdf-pack.test.ts src/lib/convert/break-line.test.ts src/lib/convert/article-html.test.ts",
+    "test": "node --test scripts/chengshu-share.test.mjs scripts/publish-manifest.test.mjs scripts/pipefail-guard.test.mjs && node --experimental-strip-types --test src/lib/convert/epub-pack.test.ts src/lib/convert/json-article.test.ts src/lib/convert/pdf-pack.test.ts src/lib/convert/break-line.test.ts src/lib/convert/article-html.test.ts src/lib/convert/ssrf.test.ts",
     "test:android": "bash scripts/android-ci.sh",
     "lint": "eslint .",
     "format": "prettier --write ."

@@ -21,7 +21,7 @@ function English() {
       <main className="mx-auto max-w-[744px] px-5 pt-10 pb-24 text-muted-foreground sm:px-8 sm:pt-14">
         <article className="max-w-[600px] leading-[1.75] [&_p+p]:mt-[1.5em] [&_ul]:mt-[1.5em]" lang="en">
           <p className="text-foreground">
-            When you hit a long piece in the phone browser that you actually want to sit with, use the system share sheet and pick 成书. It pulls the article, turns it into EPUB, PDF, Markdown, or plain text, and opens WeChat Reading, KOReader, or whatever you use — or hands Markdown to an AI.
+            When you hit a long piece in the phone browser that you actually want to sit with, use the system share sheet and pick 成书. The phone extracts the article; EPUB, Markdown, HTML and plain text are packed on device. PDF still uses the conversion API. The file opens in WeChat Reading, KOReader, or another app.
           </p>
           <p>Once the format and destination are set, it does not need to sit in the background. You only see it in the share sheet.</p>
           <p>

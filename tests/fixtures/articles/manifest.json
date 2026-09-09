@@ -1,0 +1,11 @@
+{
+  "example": {
+    "file": "example.html",
+    "title": "成书示例：把一篇文章做成书",
+    "sections": ["为什么要本地保存", "代码也不应被挤成一行"],
+    "minParagraphs": 3,
+    "hasFootnote": true,
+    "hasCode": true,
+    "images": 1
+  }
+}
