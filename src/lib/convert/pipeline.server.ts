@@ -6,6 +6,7 @@ import { sanitizeFilename, bookTitle } from "@/lib/utils";
 import { buildEpub } from "./epub-pack";
 import { articleFromUnknown, isThinHtml, jsonCandidateUrls } from "./json-article";
 import { Defuddle } from "defuddle/node";
+import { blockify } from "./article-html";
 
 const UA =
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36";
@@ -630,8 +631,9 @@ function mdWalk(node: { nodeType?: number; textContent?: string; tagName?: strin
 }
 
 function toXhtml(html: string, images: Map<string, EmbeddedImage>): string {
-  const window = parseHTML(`<div id="c">${html}</div>`);
-  const root = window.document.getElementById("c");
+  const normalized = blockify(html);
+  const window = parseHTML(`<!doctype html><html><body>${normalized}</body></html>`);
+  const root = window.document.body;
   if (!root) return "<p></p>";
   stripJunk(root);
   return serialize(root, images).trim() || "<p></p>";

@@ -1,8 +1,8 @@
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { parseHTML } from "linkedom";
 import { BOOK_FONT } from "./book-font.ts";
 import { wrapText } from "./break-line.ts";
+import { blockText, extractBlocks } from "./article-html.ts";
 
 export type PdfImage = {
   href: string;
@@ -18,59 +18,12 @@ const INK = rgb(23 / 255, 20 / 255, 18 / 255);
 const MUTED = rgb(107 / 255, 100 / 255, 92 / 255);
 const RULE = rgb(200 / 255, 193 / 255, 180 / 255);
 
-function textOf(el: { textContent?: string | null }) {
-  return (el.textContent || "").replace(/\s+/g, " ").trim();
-}
-
 function blocksFromHtml(html: string): Block[] {
-  const { document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
-  const out: Block[] = [];
-
-  function visit(node: {
-    nodeType: number;
-    nodeName: string;
-    textContent?: string | null;
-    getAttribute?: (n: string) => string | null;
-    childNodes: ArrayLike<unknown>;
-  }) {
-    if (node.nodeType === 3) {
-      const t = (node.textContent || "").replace(/\s+/g, " ").trim();
-      if (t) out.push({ kind: "p", text: t });
-      return;
-    }
-    const tag = (node.nodeName || "").toLowerCase();
-    if (tag === "img") {
-      out.push({ kind: "img", text: "", src: node.getAttribute?.("src") || "" });
-      return;
-    }
-    if (/^h[1-6]$/.test(tag)) {
-      out.push({ kind: tag, text: textOf(node) });
-      return;
-    }
-    if (tag === "p" || tag === "blockquote" || tag === "li" || tag === "figcaption") {
-      out.push({ kind: tag, text: textOf(node) });
-      return;
-    }
-    if (tag === "pre") {
-      out.push({ kind: "pre", text: (node.textContent || "").replace(/\s+$/g, "") });
-      return;
-    }
-    if (tag === "hr") {
-      out.push({ kind: "hr", text: "" });
-      return;
-    }
-    if (tag === "br") {
-      return;
-    }
-    for (const child of Array.from(node.childNodes)) visit(child as typeof node);
-  }
-
-  visit(document.body as unknown as Parameters<typeof visit>[0]);
-  if (!out.length) {
-    const t = textOf(document.body);
-    if (t) out.push({ kind: "p", text: t });
-  }
-  return out.filter((b) => (b.kind === "img" ? Boolean(b.src) : b.kind === "hr" || Boolean(b.text)));
+  return extractBlocks(html).map((b) => {
+    if (b.kind === "img") return { kind: "img", text: "", src: b.src };
+    if (b.kind === "hr") return { kind: "hr", text: "" };
+    return { kind: b.kind, text: blockText(b) };
+  });
 }
 
 function usableTitle(value: string, fallback: string) {

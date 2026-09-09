@@ -106,10 +106,21 @@ test("server export accepts already-extracted HTML", () => {
 
 test("PDF pack parses article HTML as a full document so body is not dropped", () => {
   const pack = fs.readFileSync("src/lib/convert/pdf-pack.ts", "utf8");
-  assert.match(pack, /<!doctype html><html><body>/);
-  assert.doesNotMatch(pack, /parseHTML\(`<body>\$\{html\}<\/body>`\)/);
+  assert.match(pack, /extractBlocks/);
   const exportTs = fs.readFileSync("src/routes/export.ts", "utf8");
   assert.match(exportTs, /book\$\{ext/);
   assert.doesNotMatch(exportTs, /book\.epub"/);
 });
+
+test("e2e corpus covers SPA, wiki, and br-separated essays", () => {
+  const e2e = fs.readFileSync("scripts/e2e-chengshu.mjs", "utf8");
+  assert.match(e2e, /paulgraham\.com\/greatwork/);
+  assert.match(e2e, /zh\.wikipedia\.org\/wiki\/EPUB/);
+  assert.match(e2e, /refract\.aniketh\.tech/);
+  assert.match(e2e, /minP/);
+  assert.match(e2e, /minPdfPages/);
+  const pipe = fs.readFileSync("src/lib/convert/pipeline.server.ts", "utf8");
+  assert.match(pipe, /blockify\(/);
+});
+
 

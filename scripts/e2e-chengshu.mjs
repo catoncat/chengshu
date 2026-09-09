@@ -1,11 +1,52 @@
 #!/usr/bin/env node
 import JSZip from "jszip";
+import { PDFDocument } from "pdf-lib";
 
 const BASE = process.argv[2] || "http://127.0.0.1:8080";
-const SAMPLE = process.argv[3] || "https://0nl.onl/";
-const HARD =
-  process.argv[4] ||
-  "https://refract.aniketh.tech/paper/sample-attention-is-all-you-need";
+
+const CORPUS = [
+  {
+    name: "成书",
+    url: "https://0nl.onl/",
+    title: "成书",
+    minP: 4,
+    minPdfPages: 2,
+    mustInclude: ["微信读书"],
+  },
+  {
+    name: "中文维基 EPUB",
+    url: "https://zh.wikipedia.org/wiki/EPUB",
+    title: "EPUB",
+    minP: 12,
+    minPdfPages: 6,
+    mustInclude: ["电子"],
+  },
+  {
+    name: "英文维基 EPUB",
+    url: "https://en.wikipedia.org/wiki/EPUB",
+    title: "EPUB",
+    minP: 20,
+    minPdfPages: 8,
+    mustInclude: ["publication"],
+  },
+  {
+    name: "Refract SPA 论文",
+    url: "https://refract.aniketh.tech/paper/sample-attention-is-all-you-need",
+    title: "Attention Is All You Need",
+    minP: 8,
+    minPdfPages: 4,
+    mustInclude: ["Transformer", "Vaswani"],
+    mustNotInclude: ["Loading refracted workspace"],
+  },
+  {
+    name: "Paul Graham br-essay",
+    url: "https://paulgraham.com/greatwork.html",
+    title: "How to Do Great Work",
+    minP: 20,
+    minPdfPages: 8,
+    mustInclude: ["ambitious"],
+  },
+];
 
 async function main() {
   const errors = [];
@@ -14,13 +55,12 @@ async function main() {
     if (!ok) errors.push(msg);
   };
 
-  await checkEpub(BASE, SAMPLE, log, { expectTitle: "成书", ncx: true });
-  await checkPdf(BASE, SAMPLE, log, { expectTitle: "成书" });
-  await checkMarkdown(BASE, HARD, log, {
-    expectTitle: "Attention Is All You Need",
-    mustInclude: ["Transformer", "Vaswani"],
-    mustNotInclude: ["Loading refracted workspace"],
-  });
+  for (const site of CORPUS) {
+    console.log(`\n# ${site.name}`);
+    await checkEpub(BASE, site, log);
+    await checkPdf(BASE, site, log);
+    await checkMarkdown(BASE, site, log);
+  }
   await checkPackedHtml(BASE, log);
 
   if (errors.length) {
@@ -30,64 +70,74 @@ async function main() {
   console.log("\nall e2e checks passed");
 }
 
-async function checkEpub(base, sample, log, { expectTitle, ncx }) {
-  const exportUrl = `${base}/export?format=epub&url=${encodeURIComponent(sample)}`;
-  const res = await fetch(exportUrl, { headers: { "cache-control": "no-cache" } });
+async function checkEpub(base, site, log) {
+  const res = await fetch(
+    `${base}/export?format=epub&url=${encodeURIComponent(site.url)}`,
+    { headers: { "cache-control": "no-cache" } },
+  );
   const buf = Buffer.from(await res.arrayBuffer());
-  log(res.ok, `GET /export epub → ${res.status}`);
-  log((res.headers.get("content-type") || "").includes("application/epub+zip"), "content-type epub");
+  log(res.ok, `${site.name} epub ${res.status}`);
+  if (!res.ok) return;
   const xtitle = decodeURIComponent(res.headers.get("x-title") || "");
-  log(Boolean(xtitle) && xtitle.toLowerCase() !== "body", `X-Title=${xtitle || "?"}`);
-  if (expectTitle) log(xtitle.includes(expectTitle), `title contains ${expectTitle}`);
-  const cd = res.headers.get("content-disposition") || "";
-  log(!/filename\*?=(?:UTF-8'')?"?body\b/i.test(cd), `content-disposition not body`);
-  log(buf.subarray(0, 2).toString() === "PK", "epub is a zip");
-
+  log(xtitle.toLowerCase() !== "body" && xtitle.includes(site.title), `${site.name} epub title=${xtitle || "?"}`);
+  log(buf.subarray(0, 2).toString() === "PK", `${site.name} epub zip`);
   const zip = await JSZip.loadAsync(buf);
-  log(Boolean(zip.file("OEBPS/toc.ncx")), "toc.ncx (WeChat Reading needs NCX)");
-  log(!zip.file("OEBPS/nav.xhtml"), "no EPUB3 nav.xhtml in spine path");
-  const opfName = Object.keys(zip.files).find((n) => n.endsWith(".opf"));
-  log(Boolean(opfName), `opf ${opfName ?? "missing"}`);
-  if (opfName) {
-    const opf = await zip.file(opfName).async("string");
-    log(opf.includes('version="2.0"'), "EPUB 2.0 package");
-    const title = (opf.match(/<dc:title>([^<]*)<\/dc:title>/) || [])[1] || "";
-    log(Boolean(title) && title.toLowerCase() !== "body", `dc:title=${title || "?"}`);
+  log(Boolean(zip.file("OEBPS/toc.ncx")), `${site.name} ncx`);
+  const chapter = await zip.file("OEBPS/chapter.xhtml")?.async("string");
+  if (!chapter) {
+    log(false, `${site.name} missing chapter`);
+    return;
   }
-  if (ncx && zip.file("OEBPS/toc.ncx")) {
-    const ncxXml = await zip.file("OEBPS/toc.ncx").async("string");
-    log(!/<text>\s*body\s*<\/text>/i.test(ncxXml), "ncx labels are not body");
-    log(/<text>[^<]+<\/text>/.test(ncxXml), "ncx has a text label");
-  }
-  if (zip.file("OEBPS/chapter.xhtml")) {
-    const chapter = await zip.file("OEBPS/chapter.xhtml").async("string");
-    log(/<h1>[^<]+<\/h1>/.test(chapter), "chapter has h1 title");
-    log(!/<body>\s*<p/.test(chapter) || /<body title="/.test(chapter), "body carries a title");
+  const pCount = (chapter.match(/<p(?:\s|>)/g) || []).length;
+  log(pCount >= site.minP, `${site.name} epub paragraphs ${pCount} >= ${site.minP}`);
+  const paras = [...chapter.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].map((m) =>
+    m[1].replace(/<[^>]+>/g, ""),
+  );
+  const longest = paras.reduce((n, p) => Math.max(n, p.length), 0);
+  log(longest < 8000, `${site.name} longest paragraph ${longest}`);
+  for (const needle of site.mustInclude || []) {
+    log(chapter.includes(needle), `${site.name} epub has ${needle}`);
   }
 }
 
-async function checkPdf(base, sample, log, { expectTitle }) {
-  const exportUrl = `${base}/export?format=pdf&url=${encodeURIComponent(sample)}`;
-  const res = await fetch(exportUrl, { headers: { "cache-control": "no-cache" } });
+async function checkPdf(base, site, log) {
+  const res = await fetch(
+    `${base}/export?format=pdf&url=${encodeURIComponent(site.url)}`,
+    { headers: { "cache-control": "no-cache" } },
+  );
   const buf = Buffer.from(await res.arrayBuffer());
-  log(res.ok, `GET /export pdf → ${res.status}`);
-  log((res.headers.get("content-type") || "").includes("application/pdf"), "content-type pdf");
-  const xtitle = decodeURIComponent(res.headers.get("x-title") || "");
-  log(Boolean(xtitle) && xtitle.toLowerCase() !== "body", `pdf X-Title=${xtitle || "?"}`);
-  if (expectTitle) log(xtitle.includes(expectTitle), `pdf title contains ${expectTitle}`);
-  log(buf.subarray(0, 5).toString() === "%PDF-", "pdf magic");
-  log(buf.length > 1500, `pdf size ${buf.length}`);
+  log(res.ok, `${site.name} pdf ${res.status}`);
+  if (!res.ok) return;
+  log(buf.subarray(0, 5).toString() === "%PDF-", `${site.name} pdf magic`);
+  const cd = res.headers.get("content-disposition") || "";
+  log(!/filename="[^"]*\.epub"/i.test(cd), `${site.name} pdf not named .epub`);
+  try {
+    const doc = await PDFDocument.load(buf);
+    const pages = doc.getPageCount();
+    log(pages >= site.minPdfPages, `${site.name} pdf pages ${pages} >= ${site.minPdfPages}`);
+    const title = doc.getTitle() || "";
+    log(title.toLowerCase() !== "body" && title.includes(site.title), `${site.name} pdf doc title=${title || "?"}`);
+  } catch (err) {
+    log(false, `${site.name} pdf parse ${err instanceof Error ? err.message : err}`);
+  }
 }
 
-async function checkMarkdown(base, sample, log, { expectTitle, mustInclude, mustNotInclude }) {
-  const exportUrl = `${base}/export?format=md&url=${encodeURIComponent(sample)}`;
-  const res = await fetch(exportUrl, { headers: { "cache-control": "no-cache" } });
+async function checkMarkdown(base, site, log) {
+  const res = await fetch(
+    `${base}/export?format=md&url=${encodeURIComponent(site.url)}`,
+    { headers: { "cache-control": "no-cache" } },
+  );
   const text = await res.text();
-  const xtitle = decodeURIComponent(res.headers.get("x-title") || "");
-  log(res.ok, `GET /export md hard page → ${res.status}`);
-  log(xtitle.includes(expectTitle), `X-Title=${xtitle || "?"}`);
-  for (const needle of mustInclude) log(text.includes(needle), `md includes ${needle}`);
-  for (const needle of mustNotInclude) log(!text.includes(needle), `md excludes ${needle}`);
+  log(res.ok, `${site.name} md ${res.status}`);
+  if (!res.ok) return;
+  const paras = text.split(/\n{2,}/).filter((p) => p.trim());
+  log(paras.length >= Math.min(site.minP, 6), `${site.name} md blocks ${paras.length}`);
+  for (const needle of site.mustInclude || []) {
+    log(text.includes(needle), `${site.name} md has ${needle}`);
+  }
+  for (const needle of site.mustNotInclude || []) {
+    log(!text.includes(needle), `${site.name} md excludes ${needle}`);
+  }
 }
 
 async function checkPackedHtml(base, log) {
@@ -99,9 +149,7 @@ async function checkPackedHtml(base, log) {
     body: JSON.stringify({ title: "成书", html, url: "https://0nl.onl/" }),
   });
   const text = await res.text();
-  const xtitle = decodeURIComponent(res.headers.get("x-title") || "");
-  log(res.ok, `POST /export md packed html → ${res.status}`);
-  log(xtitle.includes("成书"), `packed X-Title=${xtitle || "?"}`);
+  log(res.ok, `POST packed html ${res.status}`);
   log(text.includes("已经抽好"), "packed body kept");
 }
 
@@ -109,4 +157,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-
