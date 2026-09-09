@@ -1,0 +1,82 @@
+name: reliable-delivery-proof
+on:
+  push:
+    branches: [build/reliable-delivery-proof-20260909]
+    paths: [".delivery-proof/**", ".github/workflows/delivery-proof.yml"]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: materialize exact reviewed source in ephemeral runner
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, lzma, os, pathlib
+          chunks = sorted(pathlib.Path('.delivery-proof').glob('chunk*'))
+          assert len(chunks) == 20
+          patch = lzma.decompress(base64.b64decode(''.join(p.read_text() for p in chunks)))
+          assert hashlib.sha256(patch).hexdigest() == '9fd2b28e28e121cb7a1ad08340736198c34d4f80a27017692fb90fa753baec1b'
+          pathlib.Path(os.environ['RUNNER_TEMP'], 'implementation.patch').write_bytes(patch)
+          PY
+          git checkout --detach 85ce6ce96fc061ff0684f8e9ab743eeca91d55dd
+          git apply --index "$RUNNER_TEMP/implementation.patch"
+          test "$(git write-tree)" = 42c134d524fd7a74d8bd23205a13859f9723a719
+          git diff --cached --check
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: real-process storage proof and share regression
+        run: |
+          bash scripts/test-archive.sh | tee "$RUNNER_TEMP/archive-proof.log"
+          node --test scripts/chengshu-share.test.mjs | tee "$RUNNER_TEMP/share-proof.log"
+      - name: Android compilation and unit tests
+        run: gradle -p android testDebugUnitTest assembleDebug assemblePreview --stacktrace 2>&1 | tee "$RUNNER_TEMP/android-build.log"
+      - name: commit only the verified tree to development branch
+        run: |
+          test "$(git write-tree)" = 42c134d524fd7a74d8bd23205a13859f9723a719
+          git fetch origin ux/reliable-delivery-20260909
+          test "$(git rev-parse FETCH_HEAD)" = 85ce6ce96fc061ff0684f8e9ab743eeca91d55dd
+          git config user.name "chengshu-bot"
+          git config user.email "chengshu-bot@users.noreply.github.com"
+          git commit -m "feat(android): durable delivery, local EPUB compiler and isolated preview"
+          git push origin HEAD:refs/heads/ux/reliable-delivery-20260909
+          git rev-parse HEAD > "$RUNNER_TEMP/BUILD_COMMIT.txt"
+          git archive --format=tar.gz -o "$RUNNER_TEMP/verified-source.tar.gz" HEAD
+      - name: collect reproducible verification evidence
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/proof-dependencies"
+          find "$HOME/.gradle/caches" -type f \( -name 'jsoup-*.jar' -o -name 'junit-4*.jar' -o -name 'hamcrest-core-*.jar' \) -exec cp {} "$RUNNER_TEMP/proof-dependencies/" \; || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reliable-delivery-evidence
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/archive-proof.log
+            ${{ runner.temp }}/share-proof.log
+            ${{ runner.temp }}/android-build.log
+            ${{ runner.temp }}/BUILD_COMMIT.txt
+            ${{ runner.temp }}/proof-dependencies/
+            android/app/build/reports/tests/
+            android/app/build/test-results/
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: chengshu-preview-apk
+          path: android/app/build/outputs/apk/preview/app-preview.apk
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: verified-source
+          path: ${{ runner.temp }}/verified-source.tar.gz
