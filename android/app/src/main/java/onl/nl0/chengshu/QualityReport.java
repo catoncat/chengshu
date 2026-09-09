@@ -41,6 +41,15 @@ final class QualityReport {
     return out.toString();
   }
 
+  String failureCode() {
+    for (Issue issue : issues) {
+      if (!"error".equals(issue.severity)) continue;
+      if (Failures.AUTH.equals(issue.code)) return Failures.AUTH;
+      if (Failures.EMPTY.equals(issue.code)) return Failures.EMPTY;
+    }
+    return Failures.CONVERSION;
+  }
+
   JSONObject json() {
     JSONObject o = new JSONObject();
     JSONArray arr = new JSONArray();

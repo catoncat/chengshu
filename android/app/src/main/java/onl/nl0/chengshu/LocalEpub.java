@@ -70,6 +70,7 @@ final class LocalEpub {
     Document source = Jsoup.parseBodyFragment(xmlCharacters(html), url);
     int unsupported = source.select("video,audio,iframe,svg,math,canvas").size();
     source.select("script,style,form,iframe,object,embed,video,audio,svg,math,canvas,noscript").remove();
+    promotePictureSources(source);
     for (Element image : source.select("img")) {
       String src = firstImageSource(image);
       String resolved = resolvedImageUrl(src, url);
@@ -393,6 +394,38 @@ final class LocalEpub {
     String srcset = image.attr("srcset").trim();
     if (srcset.isEmpty()) srcset = image.attr("data-srcset").trim();
     return pickSrcset(srcset);
+  }
+
+  /** Copy the best <source srcset> onto a bare <img> inside <picture>, then unwrap. */
+  static void promotePictureSources(Document source) {
+    if (source == null) return;
+    for (Element picture : new ArrayList<>(source.select("picture"))) {
+      Element img = picture.selectFirst("img");
+      if (img == null) { picture.remove(); continue; }
+      if (firstImageSource(img).isEmpty()) {
+        String picked = pickPictureSrcset(picture);
+        if (!picked.isEmpty()) img.attr("src", picked);
+      }
+      picture.replaceWith(img);
+    }
+  }
+
+  static String pickPictureSrcset(Element picture) {
+    if (picture == null) return "";
+    StringBuilder raster = new StringBuilder();
+    StringBuilder other = new StringBuilder();
+    for (Element src : picture.select("source")) {
+      String set = src.attr("srcset").trim();
+      if (set.isEmpty()) set = src.attr("data-srcset").trim();
+      if (set.isEmpty()) continue;
+      String type = src.attr("type").toLowerCase(Locale.ROOT);
+      boolean exotic = type.contains("webp") || type.contains("avif") || type.contains("svg");
+      StringBuilder into = exotic ? other : raster;
+      if (into.length() > 0) into.append(", ");
+      into.append(set);
+    }
+    String picked = pickSrcset(raster.length() > 0 ? raster.toString() : other.toString());
+    return picked == null ? "" : picked;
   }
 
   static String pickSrcset(String srcset) {

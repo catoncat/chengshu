@@ -66,9 +66,13 @@ public final class ArchiveProof {
     check(new PendingShares(new File(root, "inbox")).list().size() == 1, "pending share survives store recreation");
     check(inbox.capture("url", "https://example.org", "Title", "", false).id.equals(job.id) && inbox.list().size() == 1,
         "repeated delivery deduplicates unfinished share");
-    job = inbox.choose(job, "epub"); inbox.fail(job);
-    check(inbox.list().get(0).format.equals("epub") && !inbox.list().get(0).error.isEmpty(), "chosen format and failure survive restart");
+    job = inbox.choose(job, "epub"); inbox.fail(job, Failures.NETWORK);
+    PendingShares.Job failed = inbox.list().get(0);
+    check(failed.format.equals("epub") && Failures.NETWORK.equals(failed.errorCode)
+        && failed.error.contains("网络"), "classified failure survives restart");
     job = inbox.choose(job, "epub");
+    check(inbox.list().get(0).error.isEmpty() && inbox.list().get(0).errorCode.isEmpty(),
+        "retry clears classified failure");
     check(inbox.claim(job) && !new PendingShares(new File(root, "inbox")).claim(job), "one in-process owner per conversion");
     inbox.release(job); check(inbox.claim(job), "released conversion can retry"); inbox.release(job);
     inbox.complete(job); check(inbox.list().isEmpty(), "acknowledged share leaves pending list");
