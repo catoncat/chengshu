@@ -4,6 +4,10 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
   workflow_dispatch:
 jobs:
   build:
@@ -12,6 +16,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: archive exact source
+        run: git archive --format=tar.gz -o "$RUNNER_TEMP/chengshu-source.tar.gz" HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chengshu-source
+          path: ${{ runner.temp }}/chengshu-source.tar.gz
+          retention-days: 3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -21,7 +32,19 @@ jobs:
         with:
           gradle-version: "8.9"
       - run: gradle -p android testDebugUnitTest assembleDebug
+      - name: test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: android/app/build/reports/tests/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chengshu-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
       - name: publish apk
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           mkdir -p public
           cp android/app/build/outputs/apk/debug/app-debug.apk public/chengshu.apk
@@ -41,9 +64,5 @@ jobs:
           git add public/chengshu.apk public/app.json
           git diff --staged --quiet && echo "apk unchanged" && exit 0
           git commit -m "android: 发布 APK"
-          git pull --rebase origin HEAD || git pull --rebase origin main
-          git push
-      - uses: actions/upload-artifact@v4
-        with:
-          name: chengshu-apk
-          path: public/chengshu.apk
+          git pull --rebase origin main
+          git push origin HEAD:main
