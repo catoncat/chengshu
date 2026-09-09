@@ -111,6 +111,8 @@ public class ShareActivity extends Activity {
     findViewById(R.id.rowDest).setOnClickListener(v -> pickDest(currentFormat()));
     findViewById(R.id.rowHidden).setOnClickListener(v -> pickHidden());
     findViewById(R.id.rowUpdate).setOnClickListener(v -> onUpdateTap());
+    View rowBackup = findViewById(R.id.rowBackup);
+    if (rowBackup != null) rowBackup.setOnClickListener(v -> exportBackup());
     findViewById(R.id.confirmCancel).setOnClickListener(v -> cancelShare());
     findViewById(R.id.retry).setOnClickListener(v -> {
       if (activeJob != null) startJob(activeJob); else showHome();
@@ -471,6 +473,33 @@ public class ShareActivity extends Activity {
         .show();
   }
 
+  private void exportBackup() {
+    Toast.makeText(this, "正在打包已保存的书…", Toast.LENGTH_SHORT).show();
+    new Thread(() -> {
+      try {
+        File zip = library.exportBackup(new File(getCacheDir(), "backup"));
+        runOnUiThread(() -> {
+          try {
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", zip);
+            Intent send = new Intent(Intent.ACTION_SEND).setType("application/zip");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.putExtra(Intent.EXTRA_TITLE, "成书备份");
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            send.setClipData(ClipData.newRawUri("成书备份", uri));
+            startActivity(Intent.createChooser(send, "导出备份"));
+          } catch (Exception e) {
+            Toast.makeText(this, "备份已生成，但这次没能打开分享。", Toast.LENGTH_LONG).show();
+          }
+        });
+      } catch (Exception e) {
+        String message = e.getMessage();
+        runOnUiThread(() -> Toast.makeText(this,
+            message == null || message.isEmpty() ? "没有可导出的文件" : message,
+            Toast.LENGTH_LONG).show());
+      }
+    }, "chengshu-backup").start();
+  }
+
   private void shareItem(Library.Item item) {
     try {
       Format format = Format.of(item.lastFormat);
@@ -797,16 +826,30 @@ public class ShareActivity extends Activity {
   private Downloaded download(String pageUrl, Format format, PageExtractor.Article article)
       throws Exception {
     if (article == null || article.content.isEmpty()) throw new IOException("没有提取到正文");
-    if (format == Format.EPUB) {
-      LocalEpub.Result result = LocalEpub.build(article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl, article.title, article.byline, article.content, EpubImages::load);
-      return new Downloaded(result.bytes, result.title, result.warning);
+    if (format == Format.PDF) {
+      // PDF still goes to the conversion server with already-extracted HTML.
+      return postPack(pageUrl, format, article);
     }
-    if (format == Format.TXT || format == Format.MD || format == Format.HTML) {
-      LocalPack.Result result = LocalPack.build(format, article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl, article.title, article.byline, article.content);
-      return new Downloaded(result.bytes, result.title, result.warning);
-    }
-    // PDF still goes to the conversion server with already-extracted HTML.
-    return postPack(pageUrl, format, article);
+    String url = article.sourceUrl == null || article.sourceUrl.isEmpty() ? pageUrl : article.sourceUrl;
+    JobRepository.Job catalog = coordinator.enqueueSavedSnapshot(url, format.id, article);
+    File packed = coordinator.runInline(catalog, article, EpubImages::load);
+    if (packed == null || !packed.isFile() || packed.length() < 8)
+      throw new IOException("没有生成可用文件");
+    QualityReport quality = articles.artifactQuality(catalog.articleId, format);
+    return new Downloaded(Files.readAllBytes(packed.toPath()),
+        catalogTitle(catalog.articleId, article.title), quality.summary());
+  }
+
+  private String catalogTitle(String articleId, String fallback) {
+    try {
+      for (JSONObject row : articles.visibleArticles()) {
+        if (articleId.equals(row.optString("id"))) {
+          String title = row.optString("title");
+          if (!title.isEmpty()) return title;
+        }
+      }
+    } catch (Exception ignored) { /* library title remains the fallback */ }
+    return fallback;
   }
 
   private Downloaded postPack(String pageUrl, Format format, PageExtractor.Article article)

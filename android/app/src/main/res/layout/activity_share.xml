@@ -213,6 +213,43 @@
 
         <View
             android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginLeft="20dp"
+            android:background="@color/line" />
+
+        <LinearLayout
+            android:id="@+id/rowBackup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="52dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp"
+            android:contentDescription="导出全部已保存的书">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="导出备份"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/backupValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ZIP"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
             android:layout_height="8dp"
             android:background="@color/row" />
 

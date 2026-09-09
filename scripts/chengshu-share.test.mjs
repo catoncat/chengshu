@@ -80,16 +80,23 @@ test("android offers PDF next to EPUB", () => {
   assert.match(manifest, /application\/pdf/);
 });
 
-test("share extracts with Defuddle, locally compiles EPUB, and POSTs other formats", () => {
+test("share extracts with Defuddle, locally compiles EPUB, and POSTs PDF", () => {
   const extractor = fs.readFileSync(
     "android/app/src/main/java/onl/nl0/chengshu/PageExtractor.java",
+    "utf8",
+  );
+  const coordinator = fs.readFileSync(
+    "android/app/src/main/java/onl/nl0/chengshu/ConversionCoordinator.java",
     "utf8",
   );
   assert.match(extractor, /setJavaScriptEnabled\(true\)/);
   assert.match(extractor, /defuddle\.js/);
   assert.match(extractor, /new C\(document/);
   assert.match(activity, /PageExtractor\.extract/);
-  assert.match(activity, /LocalEpub\.build/);
+  assert.match(activity, /coordinator\.enqueueSavedSnapshot/);
+  assert.match(activity, /coordinator\.runInline/);
+  assert.match(coordinator, /LocalEpub\.build/);
+  assert.match(coordinator, /LocalPack\.build/);
   assert.match(activity, /postPack/);
   assert.doesNotMatch(activity, /getExport|SHARE_FRESH_MS/);
   assert.match(activity, /"html"/);
@@ -143,13 +150,21 @@ test("empty image src is not turned into the article URL", () => {
   assert.match(epub, /static String firstImageSource/);
   assert.match(epub, /static String resolvedImageUrl/);
   assert.doesNotMatch(epub, /image\.absUrl\("src"\)/);
-  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 14/);
+  assert.match(fs.readFileSync("android/app/build.gradle.kts", "utf8"), /versionCode = 15/);
 });
 
 test("txt markdown and html pack on device; pdf still posts extracted html", () => {
-  assert.match(activity, /LocalPack\.build/);
+  const coordinator = fs.readFileSync(
+    "android/app/src/main/java/onl/nl0/chengshu/ConversionCoordinator.java",
+    "utf8",
+  );
+  assert.match(coordinator, /LocalPack\.build/);
+  assert.match(activity, /Format\.PDF/);
+  assert.match(activity, /postPack/);
   assert.match(activity, /runExample/);
+  assert.match(activity, /exportBackup/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /tryExample/);
+  assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /rowBackup/);
   assert.equal(fs.existsSync("android/app/src/main/assets/example-article.html"), true);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/Update.java", "utf8"), /sha256/);
 });

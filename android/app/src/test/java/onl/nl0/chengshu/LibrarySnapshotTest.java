@@ -52,4 +52,36 @@ public class LibrarySnapshotTest {
     Library.Item item = library.save(url, "title", Format.EPUB, bytes("body"));
     library.delete(item); assertTrue(library.list().isEmpty()); assertNull(library.snapshot(url));
   }
+
+  @Test public void backupZipContainsBooksAndLeavesOriginals() throws Exception {
+    Library library = new Library(temporary.newFolder());
+    String url = "https://example.org/keep";
+    library.saveSnapshot(url, new PageExtractor.Article("备份篇", "", "<p>snapshot html</p>", url));
+    library.save(url, "备份篇", Format.EPUB, bytes("epub-bytes"));
+    library.save(url, "备份篇", Format.MD, bytes("md-bytes"));
+    File zip = library.exportBackup(temporary.newFolder());
+    assertTrue(zip.isFile());
+    assertTrue(zip.length() > 20);
+    java.util.Set<String> names = new java.util.HashSet<>();
+    try (java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(new FileInputStream(zip))) {
+      java.util.zip.ZipEntry entry;
+      while ((entry = in.getNextEntry()) != null) names.add(entry.getName());
+    }
+    assertTrue(names.stream().anyMatch(n -> n.endsWith(".epub")));
+    assertTrue(names.stream().anyMatch(n -> n.endsWith(".md")));
+    assertTrue(names.stream().anyMatch(n -> n.endsWith(".source.html")));
+    assertEquals(1, library.list().size());
+    assertEquals("epub-bytes", new String(Files.readAllBytes(library.file(library.list().get(0), Format.EPUB).toPath()), StandardCharsets.UTF_8));
+  }
+
+  @Test public void backupWithoutBooksFailsWithoutWritingZip() throws Exception {
+    File dest = temporary.newFolder();
+    Library library = new Library(temporary.newFolder());
+    try {
+      library.exportBackup(dest);
+      fail();
+    } catch (IOException expected) { }
+    File zip = new File(dest, "chengshu-backup.zip");
+    assertFalse(zip.isFile());
+  }
 }
