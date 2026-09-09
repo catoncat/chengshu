@@ -171,6 +171,8 @@ test("txt markdown and html pack on device; pdf still posts extracted html", () 
   assert.match(activity, /saveItemToFolder/);
   assert.match(activity, /ACTION_CREATE_DOCUMENT/);
   assert.match(activity, /setContentDescription\("更多操作"\)/);
+  assert.match(activity, /setMinimumHeight\(dp\(64\)\)/);
+  assert.doesNotMatch(activity, /bar\.setMinHeight/);
   assert.match(activity, /imageCache::load/);
   assert.match(fs.readFileSync("android/app/src/main/java/onl/nl0/chengshu/LocalEpub.java", "utf8"), /addAttributes\("ol", "start"/);
   assert.match(fs.readFileSync("android/app/src/main/res/layout/activity_share.xml", "utf8"), /tryExample/);

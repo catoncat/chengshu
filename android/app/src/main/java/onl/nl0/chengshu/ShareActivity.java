@@ -439,7 +439,7 @@ public class ShareActivity extends Activity {
     bar.setOrientation(LinearLayout.HORIZONTAL);
     bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
     bar.setPadding(dp(20), dp(10), dp(8), dp(10));
-    bar.setMinHeight(dp(64));
+    bar.setMinimumHeight(dp(64));
     bar.setBackgroundResource(android.R.drawable.list_selector_background);
     bar.setClickable(true);
     bar.setOnClickListener(open);
